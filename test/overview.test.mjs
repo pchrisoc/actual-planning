@@ -2,7 +2,7 @@ import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {buildOverview,wageSplit} from '../public/overview.mjs';
 import {calculatePlan} from '../src/planning.mjs';
-const input=()=>({version:2,year:2027,annualGrossCents:12000000,firstPayDate:'2027-01-01',frequency:'monthly',k401:{limitCents:2450000,ytdCents:0,targetDate:'2027-06-30'},ira:{limitCents:750000,ytdCents:0,targetDate:'2027-09-30'},employer:{mode:'match',ratePct:50,matchSalaryCapPct:6,annualCapCents:null,ytdCents:0},loans:[],goals:[],mappings:[]});
+const input=()=>({version:2,year:2027,annualGrossCents:12000000,firstPayDate:'2027-01-01',frequency:'monthly',k401:{limitCents:2450000,ytdCents:0,targetDate:'2027-06-30'},ira:{limitCents:750000,ytdCents:0,targetDate:'2027-09-30'},employer:{mode:'match',ratePct:50,matchSalaryCapPct:6,annualCapCents:null,ytdCents:0},loans:[],goals:[],mappings:[{source:'ira',categoryId:'ira'}]});
 function actual(plan){return {year:plan.year,categories:[{id:'living',name:'Groceries'},{id:'mapped',name:'Saved category'},{id:'income',name:'Income',group_id:'income-group'}],groups:[{id:'income-group',is_income:true}],budgets:plan.monthly.map(m=>({month:m.month,status:'read',budget:{categoryGroups:[{categories:[{id:'living',budgeted:30000},{id:'mapped',budgeted:99999},{id:'income',budgeted:999999}]}]}}))};}
 test('wage breakdown counts each source once and keeps employer contributions outside wage percentages',()=>{
  const p=input();p.goals=[{id:'car',name:'Car Fund',balanceCents:0,targetCents:500000,contributionCents:50000,aprPct:0,frequency:'monthly',categoryId:'mapped'}];
@@ -40,4 +40,10 @@ test('zero-wage allocations do not divide by zero, and unmet goals never receive
  const p=input();p.annualGrossCents=0;p.goals=[{id:'stuck',name:'No contributions',balanceCents:0,targetCents:100000,contributionCents:0,aprPct:0,frequency:'monthly',categoryId:''}];
  const plan=calculatePlan(p),o=buildOverview(plan,p),split=wageSplit(o);
  assert.ok(split.parts.every(p=>p.percent===null));assert.equal(o.events.find(e=>e.key==='goal:stuck').date,null);assert.equal(o.events.find(e=>e.key==='401k').finished,false);
+});
+
+test('legacy plans without saved mappings do not count Actual retirement or loans twice',()=>{
+ const p=input();p.mappings=[];const plan=calculatePlan(p),a=actual(plan),o=buildOverview(plan,p,a);
+ assert.deepEqual(o.unmappedSources,['Roth IRA']);assert.ok(!o.series.some(s=>s.key.startsWith('actual:')));assert.equal(wageSplit(o).incomplete,true);
+ p.mappings=[{source:'ira',categoryId:'mapped'}];const mapped=buildOverview(plan,p,a);assert.deepEqual(mapped.unmappedSources,[]);assert.ok(mapped.series.some(s=>s.key==='actual:living'));assert.ok(!mapped.series.some(s=>s.key==='actual:mapped'));
 });

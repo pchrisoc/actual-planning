@@ -12,17 +12,20 @@ export function buildOverview(plan,input,actual=null){
   for(const goal of plan.goals??[])add(`goal:${goal.id}`,goal.name,months.map(m=>amount(m.goals?.[goal.id])));
   const mapped=new Set((input.mappings??[]).filter(m=>m.source!=='income').map(m=>m.categoryId));
   for(const goal of plan.goals??[])if(goal.categoryId)mapped.add(goal.categoryId);
+  const mappedSources=new Set((input.mappings??[]).filter(m=>m.categoryId).map(m=>m.source));
+  for(const goal of plan.goals??[])if(goal.categoryId)mappedSources.add(`goal:${goal.id}`);
+  const unmappedSources=series.filter(s=>s.key!=='401k'&&s.values.some(v=>v>0)&&!mappedSources.has(s.key)).map(s=>s.label);
   const relevantActual=actual?.year===plan.year?actual:null;
   const incomeGroups=new Set((relevantActual?.groups??[]).filter(g=>g.is_income).map(g=>g.id));
   const actualMonths=months.map(m=>relevantActual?.budgets?.find(b=>b.month===m.month&&b.status==='read')?.budget??null);
-  for(const c of relevantActual?.categories??[]){
+  for(const c of (unmappedSources.length?[]:relevantActual?.categories)??[]){
     if(c.hidden||c.is_income||incomeGroups.has(c.group_id)||mapped.has(c.id))continue;
     const values=actualMonths.map(b=>Math.max(0,amount(b?.categoryGroups?.flatMap(g=>g.categories).find(item=>item.id===c.id)?.budgeted)));
     if(values.some(v=>v>0))add(`actual:${c.id}`,c.name,values);
   }
   const rows=months.map((m,i)=>{
     const committedCents=sum(series.map(s=>s.values[i])),grossCents=m.grossCents;
-    return {month:m.month,grossCents,committedCents,remainingCents:Math.max(0,grossCents-committedCents),shortfallCents:Math.max(0,committedCents-grossCents),employerCents:m.employerCents,actualAvailable:!!actualMonths[i]};
+    return {month:m.month,grossCents,committedCents,remainingCents:Math.max(0,grossCents-committedCents),shortfallCents:Math.max(0,committedCents-grossCents),employerCents:m.employerCents,actualAvailable:!!actualMonths[i]&&!unmappedSources.length};
   });
   add('remaining','Unassigned in this view · before tax',rows.map(r=>r.remainingCents),'#dbe7da');
   const events=[];
@@ -36,7 +39,7 @@ export function buildOverview(plan,input,actual=null){
   for(const goal of plan.goals??[])events.push({key:`goal:${goal.id}`,name:goal.name,startDate:plan.startDate,date:goal.reachedDate,targetDate:null,status:goal.reachedDate?(goal.balanceCents>=goal.targetCents?'Already funded':'Savings target reached'):'Not reached within 50 years',finished:!!goal.reachedDate});
   const lastEmployer=plan.rows.filter(r=>r.employerCents>0).at(-1)?.date;
   if(lastEmployer)events.push({key:'employer',name:'Employer contributions',startDate:plan.startDate,date:lastEmployer,targetDate:null,status:'Last contribution in this plan',finished:false});
-  return {year:plan.year,startDate:plan.startDate,rows,series,events,hasActual:!!relevantActual,missingMonths:rows.filter(r=>!r.actualAvailable).map(r=>r.month)};
+  return {year:plan.year,startDate:plan.startDate,rows,series,events,hasActual:!!relevantActual,unmappedSources,missingMonths:rows.filter((r,i)=>!actualMonths[i]).map(r=>r.month)};
 }
 export function wageSplit(overview,month='all'){
   const indices=overview.rows.map((r,i)=>i).filter(i=>month==='all'||overview.rows[i].month===month);
@@ -55,7 +58,7 @@ function legendPart(color,label){const item=el('span',undefined,'overview-legend
 export function renderOverview(plan,input,actual){
   const overview=buildOverview(plan,input,actual),root=document.getElementById('overview'),bottom=document.getElementById('wage-split');root.hidden=false;bottom.hidden=false;
   const charts=document.getElementById('overview-charts');charts.replaceChildren();
-  const coverage=el('p',undefined,'note');coverage.textContent=overview.missingMonths.length?`Actual allocations unavailable for ${overview.missingMonths.join(', ')}. These months show modeled plan items only; unassigned amounts are incomplete.`:'Includes existing Actual allocations outside your mapped plan categories.';charts.append(coverage);
+  const coverage=el('p',undefined,'note');coverage.textContent=overview.unmappedSources.length?`Map ${overview.unmappedSources.join(', ')} to Actual categories in Populate below. Until then, existing Actual expense allocations are excluded to avoid counting the same commitment twice. This graph currently shows modeled plan items only.`:overview.missingMonths.length?`Actual allocations unavailable for ${overview.missingMonths.join(', ')}. These months show modeled plan items only; unassigned amounts are incomplete.`:'Includes existing Actual allocations outside your mapped plan categories.';charts.append(coverage);
   charts.append(el('p',`From ${plan.startDate}. Forecast contributions replace mapped category amounts in this view, while other positive Actual allocations are included. Partial-month protection is handled separately in the budget preview. Taxes and benefits are not modeled.`,'muted'));
   const selected=document.getElementById('wage-scope'),previousScope=selected.value;selected.replaceChildren(new Option('All planned dates','all'),...overview.rows.map(r=>new Option(r.month,r.month)));if([...selected.options].some(option=>option.value===previousScope))selected.value=previousScope;
   const detail=el('div',undefined,'overview-detail');detail.setAttribute('aria-live','polite');
@@ -63,7 +66,7 @@ export function renderOverview(plan,input,actual){
     const month=selected.value,split=wageSplit(overview,month),holder=document.getElementById('wage-split-content');holder.replaceChildren();
     holder.append(el('p',`${month==='all'?`Planned ${plan.year} wages from ${plan.startDate}`:month} · ${money(split.grossCents)} gross wage. Percentages use this amount as 100%.`));
     if(!split.grossCents)holder.append(el('p','No wage is scheduled in this selection. Percentages are unavailable.','note'));
-    if(split.incomplete)holder.append(el('p','Incomplete: some Actual allocations could not be read. Unassigned amounts still need to cover missing costs, taxes and benefits.','note'));
+    if(split.incomplete)holder.append(el('p',overview.unmappedSources.length?'Incomplete: map the active plan sources to Actual categories to include existing expenses without double-counting. Unassigned amounts must still cover those costs, taxes and benefits.':'Incomplete: some Actual allocations could not be read. Unassigned amounts still need to cover missing costs, taxes and benefits.','note'));
     const total=sum(split.parts.map(p=>p.amountCents)),max=Math.max(split.grossCents,total,1),bar=svgRoot(960,88,'Percentage allocation of planned gross wage');bar.classList.add('wage-percentage-bar');let x=0;
     for(const part of split.parts){const width=part.amountCents/max*920;if(!width)continue;const rect=svgNode('rect',{x:20+x,y:12,width,height:36,fill:part.color,tabindex:0,role:'img','aria-label':`${part.label}: ${money(part.amountCents)}, ${part.percent===null?'no wage':part.percent.toFixed(1)+'%'}`});title(rect,rect.getAttribute('aria-label'));bar.append(rect);x+=width;}
     const boundary=20+split.grossCents/max*920;bar.append(svgNode('line',{x1:boundary,x2:boundary,y1:7,y2:55,stroke:'#183834','stroke-width':2}),svgNode('text',{x:Math.min(920,Math.max(40,boundary)),y:75,'text-anchor':'end','font-size':13,fill:'#183834'},split.grossCents?'100% of wage':'No wage'));holder.append(bar);
