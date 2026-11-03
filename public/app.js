@@ -15,7 +15,7 @@ function addLoan(data){const id=data?.id||`loan-${++loanId}-${Date.now()}`;const
 function addGoal(data){
   const card=el('div',undefined,'loan');card.dataset.id=data?.id||`goal-${++goalId}-${Date.now()}`;
   const row=el('div',undefined,'fields goal-fields');
-  for(const f of [['Goal name','name','text',data?.name||'House Savings'],['Target amount ($)','target','number',data?data.targetCents/100:50000],['Current savings ($)','balance','number',data?data.balanceCents/100:0],['Expected APR (%)','apr','number',data?.aprPct??0],['Contribution each period ($)','contribution','number',data?data.contributionCents/100:500]])row.append(loanField(...f));
+  for(const f of [['Goal name','name','text',data?.name||`Savings goal ${$('goals').children.length+1}`],['Target amount ($)','target','number',data?data.targetCents/100:50000],['Current savings ($)','balance','number',data?data.balanceCents/100:0],['Expected APR (%)','apr','number',data?.aprPct??0],['Contribution each period ($)','contribution','number',data?data.contributionCents/100:500]])row.append(loanField(...f));
   for(const [label,key,options,value]of [['Contribution frequency','frequency',[['weekly','Weekly'],['biweekly','Biweekly (every 2 weeks)'],['monthly','Monthly']],data?.frequency||'monthly']]){
     const l=el('label',label),select=el('select');select.dataset.field=key;for(const [v,t]of options)select.append(new Option(t,v));select.value=value;select.dataset.saved=value;l.append(select);row.append(l);
   }
