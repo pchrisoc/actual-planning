@@ -37,3 +37,12 @@ test('goal validation rejects invalid amounts, duplicate IDs and invalid rates/f
  assert.throws(()=>calculatePlan(plan([goal(),goal()])),/unique/);
  assert.throws(()=>calculatePlan(plan([goal({categoryId:undefined})])),/category/);
 });
+test('populate goal mappings override saved defaults without double-counting and remain distinct by goal ID',()=>{
+ const r=calculatePlan(plan([goal(),goal({id:'second',name:'Second goal',categoryId:'other',contributionCents:10000})]));
+ const categories=[{id:'house-cat'},{id:'other'},{id:'new-cat'}];
+ const cells=buildAllocations(r,[{source:'goal:house',categoryId:'new-cat'},{source:'goal:second',categoryId:'new-cat'}],['2027-01'],categories);
+ assert.equal(cells.length,1);assert.equal(cells[0].categoryId,'new-cat');assert.equal(cells[0].amountCents,40000);
+ const unselected=calculatePlan(plan([goal({categoryId:''})]));
+ assert.throws(()=>buildAllocations(unselected,[],['2027-01'],categories),/mapping/);
+ assert.equal(buildAllocations(unselected,[{source:'goal:house',categoryId:'house-cat'}],['2027-01'],categories)[0].amountCents,30000);
+});
