@@ -37,6 +37,7 @@ export async function renderPlanPdf({input,plan,preview=null}) {
   paragraph('Forecast and budget draft. This report does not apply changes to Actual.');
   heading('Income and contribution settings');
   table(['Setting','Value'],[
+    ['Plan name',input.name||'Unsaved plan'],
     ['Annual salary before tax',money(input.annualGrossCents)],['First contribution / pay date',input.firstPayDate],['Frequency',input.frequency],['Calendar dates / remaining dates',`${plan.annualPayPeriods} / ${plan.rows.length}`],
     ['Employee 401(k) limit / prior YTD',`${money(input.k401.limitCents)} / ${money(input.k401.ytdCents)}`],['401(k) target / projected completion',`${input.k401.targetDate} / ${plan.k401FinishDate??'Not reached'}`],['401(k) contribution per date (up to)',money(plan.k401RequiredPerPeriodCents)],
     ['Combined IRA limit / prior YTD',`${money(input.ira.limitCents)} / ${money(input.ira.ytdCents)}`],['Roth IRA target / projected completion',`${input.ira.targetDate} / ${plan.iraFinishDate??'Not reached'}`],['Roth IRA contribution per date (up to)',money(plan.iraRequiredPerPeriodCents)],

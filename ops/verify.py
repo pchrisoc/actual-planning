@@ -34,7 +34,7 @@ assert bearer[7:] not in text
 for path in ['/api/actual/apply', '/api/actual/bank-sync', '/api/actual/reconcile']:
     assert request(3016, path, basic, {})[0] == (403 if path.endswith('/apply') else 404)
 print('PASS: Actual write routes unavailable; service credentials absent from state response')
-scenario = {'savings':{'startMonth':'2027-04','balanceCents':100021,'monthlyContributionCents':125000,'targetCents':20000000,'years':15,'annualIncreasePct':2.5,'annualReturnPct':4,'inflationPct':2.5,'escalation':'january'},'debt':{'balanceCents':100000,'monthlyPaymentCents':51000,'aprPct':12}}
+scenario = {'name':'Deployment verification','savings':{'startMonth':'2027-04','balanceCents':100021,'monthlyContributionCents':125000,'targetCents':20000000,'years':15,'annualIncreasePct':2.5,'annualReturnPct':4,'inflationPct':2.5,'escalation':'january'},'debt':{'balanceCents':100000,'monthlyPaymentCents':51000,'aprPct':12}}
 status, _, text = request(3016, '/api/calculate', basic, scenario)
 assert status == 200 and json.loads(text)['debt']['totalInterestCents'] == 1500
 status, _, text = request(3016, '/api/scenarios', basic, scenario)

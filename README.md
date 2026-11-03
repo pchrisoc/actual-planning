@@ -11,7 +11,8 @@ A self-hosted annual salary, retirement and loan planner connected to Actual Bud
 5. Add individual loans with balances, APRs and payoff dates. Leave monthly payment blank to calculate a payoff payment, or enter a monthly payment override.
 6. Calculate to see per-date contributions, exact annual caps, monthly totals, employer contributions, loan payments and remaining balances.
 7. Load Actual categories, map Roth IRA and individual loans to existing expense categories, choose target months, and click **Populate selected values**.
-8. Review current/proposed/delta values and preservation notes, export the budget CSV or complete PDF, or apply a reviewed preview when running a live, write-enabled Docker instance.
+8. Give your plan a name before saving. Saved plans are listed by creation time, newest first; loading a plan does not change its position. Older unnamed plans receive a date-based label.
+9. Review current/proposed/delta values and preservation notes, export the budget CSV or complete PDF, or apply a reviewed preview when running a live, write-enabled Docker instance.
 
 The requested retirement defaults are editable planning inputs. They are not a claim about a tax year's published legal limits or personal eligibility. Gross salary is not spendable income: income tax, payroll tax, withholding and benefits are **not calculated**. Roth eligibility is not determined. See [IRS retirement contribution information](https://www.irs.gov/retirement-plans/plan-participant-employee/retirement-topics-contributions) and [Roth IRA eligibility](https://www.irs.gov/retirement-plans/roth-iras).
 

@@ -1,5 +1,5 @@
 import {createServer} from 'node:http';
-import {readFile, writeFile, mkdir, readdir} from 'node:fs/promises';
+import {readFile, writeFile, mkdir} from 'node:fs/promises';
 import {randomUUID, createHash} from 'node:crypto';
 import {fileURLToPath} from 'node:url';
 import {join} from 'node:path';
@@ -7,6 +7,7 @@ import {savings, debt} from './models.mjs';
 import {state, root, withActual, exportBackup} from './actual.mjs';
 import {calculatePlan, buildAllocations} from './planning.mjs';
 import {inspectAllocations, applyAllocations} from './budget-actions.mjs';
+import {planName,listPlans} from './saved-plans.mjs';
 const publicRoot = fileURLToPath(new URL('../public/', import.meta.url));
 const scenarioRoot = join(root, 'scenarios');
 await mkdir(scenarioRoot, {recursive:true, mode:0o700});
@@ -91,13 +92,15 @@ createServer(async (req, res) => {
     }
     if (req.method === 'POST' && url.pathname === '/api/scenarios') {
       const input = await body(req);
+      const name = planName(input.name);
+      input.name = name;
       const result = calculate(input);
       const id = randomUUID();
-      const scenario = {id, createdAt:new Date().toISOString(), input, result};
+      const scenario = {id, name, createdAt:new Date().toISOString(), input, result};
       await writeFile(join(scenarioRoot, `${id}.json`), JSON.stringify(scenario), {mode:0o600, flag:'wx'});
       return send(res, 201, scenario);
     }
-    if (req.method === 'GET' && url.pathname === '/api/scenarios') return send(res, 200, {ids:(await readdir(scenarioRoot)).filter(n=>/^[a-f0-9-]+\.json$/.test(n)).map(n=>n.slice(0,-5))});
+    if (req.method === 'GET' && url.pathname === '/api/scenarios') {const scenarios=await listPlans(scenarioRoot);return send(res,200,{scenarios,ids:scenarios.map(s=>s.id)});}
     if (req.method === 'GET' && /^\/api\/scenarios\/[a-f0-9-]{36}$/.test(url.pathname)) return send(res, 200, JSON.parse(await readFile(join(scenarioRoot, `${url.pathname.split('/').at(-1)}.json`), 'utf8')));
     return send(res, 404, {error:'Route unavailable; Actual write-back is not implemented'});
   } catch (error) {
