@@ -37,6 +37,8 @@ export function calculatePlan(input) {
   const year = input.year;
   if (!Number.isInteger(year) || year < 2000 || year > 2100) fail('Choose a planning year from 2000 to 2100');
   const annualGrossCents=amount(input.annualGrossCents,'Annual salary');
+  const taxRatePct=input.taxRatePct??25;
+  const taxRate=pct(taxRatePct,'Estimated tax rate');
   const calendar=payCalendar(year,input.firstPayDate,input.frequency);
   const grossParts=split(annualGrossCents,calendar.length);
   const paydays=calendar.map((d,i)=>({date:d,grossCents:grossParts[i]})).filter(d=>d.date>=input.firstPayDate);
@@ -66,14 +68,16 @@ export function calculatePlan(input) {
     const employerScheduled=Math.round(employer.mode==='salary'?p.grossCents*employerRate:Math.min(k401Cents,Math.round(p.grossCents*matchSalaryCap))*employerRate);
     const employerCents=Math.min(employerScheduled,Math.max(0,employerCap-employerYtd));
     kTotal+=k401Cents;iraTotal+=iraCents;employerYtd+=employerCents;employerTotal+=employerCents;
-    return {...p,k401Cents,iraCents,employerCents,k401YtdCents:kTotal,iraYtdCents:iraTotal,grossAfterDeferralCents:p.grossCents-k401Cents};
+    const grossAfterDeferralCents=p.grossCents-k401Cents;
+    const taxCents=Math.round(grossAfterDeferralCents*taxRate);
+    return {...p,k401Cents,iraCents,employerCents,k401YtdCents:kTotal,iraYtdCents:iraTotal,grossAfterDeferralCents,taxCents,netPayCents:grossAfterDeferralCents-taxCents};
   });
   if(kTotal<kLimit)warnings.push('The 401(k) target is not reachable with the selected dates and gross salary.');
   if(employer.mode==='match'&&employerRate>0&&k.targetDate<`${year}-12-31`)warnings.push('Matching is calculated per contribution date and stops when employee deferrals stop. A year-end employer true-up is not modeled.');
-  warnings.push('Gross salary is not take-home pay. Taxes, withholding, benefits and payroll election restrictions are not calculated.');
+  warnings.push(`Estimated taxes use an editable ${taxRatePct}% effective-rate assumption applied to pay after 401(k). This is not a tax or payroll calculation; actual federal, California, Social Security and Medicare amounts depend on your circumstances. Benefits and payroll election restrictions are not modeled.`);
   warnings.push('Retirement limits are editable planning assumptions. Confirm tax-year limits, Roth income eligibility, and all IRA contributions across accounts.');
-  const monthly=Array.from({length:12},(_,i)=>({month:`${year}-${String(i+1).padStart(2,'0')}`,grossCents:0,grossAfterDeferralCents:0,k401Cents:0,iraCents:0,employerCents:0,loanPaymentsCents:0,loans:{}}));
-  for(const p of rows){const m=monthly[Number(p.date.slice(5,7))-1];for(const key of ['grossCents','grossAfterDeferralCents','k401Cents','iraCents','employerCents'])m[key]+=p[key];}
+  const monthly=Array.from({length:12},(_,i)=>({month:`${year}-${String(i+1).padStart(2,'0')}`,grossCents:0,grossAfterDeferralCents:0,taxCents:0,netPayCents:0,k401Cents:0,iraCents:0,employerCents:0,loanPaymentsCents:0,loans:{}}));
+  for(const p of rows){const m=monthly[Number(p.date.slice(5,7))-1];for(const key of ['grossCents','grossAfterDeferralCents','taxCents','netPayCents','k401Cents','iraCents','employerCents'])m[key]+=p[key];}
   if(!Array.isArray(input.loans)||input.loans.length>30)fail('Provide at most 30 loans');
   const ids=new Set();
   const loans=input.loans.map(loan=>{
@@ -110,8 +114,8 @@ export function calculatePlan(input) {
   const goals=(input.goals??[]).map(g=>{if(goalIds.has(g.id))fail('Every goal needs a unique ID');goalIds.add(g.id);return forecastGoal(g,input.firstPayDate);});
   for(const m of monthly){m.goals={};m.goalContributionsCents=0;}
   for(const g of goals)for(const r of g.rows){if(r.date.startsWith(`${year}-`)){const m=monthly[Number(r.date.slice(5,7))-1];m.goals[g.id]=(m.goals[g.id]??0)+r.contributionCents;m.goalContributionsCents+=r.contributionCents;}}
-  if(monthly.some(m=>m.iraCents+m.loanPaymentsCents+m.goalContributionsCents>m.grossCents-m.k401Cents))warnings.push('Some months require more IRA, loan and savings goal funding than gross pay after 401(k). Review targets before budgeting; taxes and living costs are still additional.');
-  return {version:2,year,startDate:input.firstPayDate,rows,monthly,loans,goals,warnings,annualPayPeriods:calendar.length,k401RequiredPerPeriodCents:Math.max(0,...kParts),iraRequiredPerPeriodCents:Math.max(0,...iraParts),k401FinishDate:rows.find(r=>r.k401YtdCents>=kLimit)?.date??null,iraFinishDate:rows.find(r=>r.iraYtdCents>=iraLimit)?.date??null,employee401kCents:kTotal-kYtd,iraContributionCents:iraTotal-iraYtd,employerContributionCents:employerTotal};
+  if(monthly.some(m=>m.iraCents+m.loanPaymentsCents+m.goalContributionsCents>m.netPayCents))warnings.push('Some months require more IRA, loan and savings goal funding than estimated take-home pay after tax and 401(k). Review targets before budgeting; living costs are additional.');
+  return {version:2,year,startDate:input.firstPayDate,rows,monthly,loans,goals,warnings,annualPayPeriods:calendar.length,taxRatePct,totalTaxCents:rows.reduce((sum,r)=>sum+r.taxCents,0),totalNetPayCents:rows.reduce((sum,r)=>sum+r.netPayCents,0),k401RequiredPerPeriodCents:Math.max(0,...kParts),iraRequiredPerPeriodCents:Math.max(0,...iraParts),k401FinishDate:rows.find(r=>r.k401YtdCents>=kLimit)?.date??null,iraFinishDate:rows.find(r=>r.iraYtdCents>=iraLimit)?.date??null,employee401kCents:kTotal-kYtd,iraContributionCents:iraTotal-iraYtd,employerContributionCents:employerTotal};
 }
 export function buildAllocations(plan, mappings, months, categories, {preserveStartMonth=true}={}) {
   if(!Array.isArray(mappings)||!Array.isArray(months)||!months.length)fail('Select categories and at least one month');
@@ -125,7 +129,7 @@ export function buildAllocations(plan, mappings, months, categories, {preserveSt
     if(!category||!!category.is_income!==isIncome)fail(isIncome?'Select an existing income category for salary':'Select an existing expense category for contributions and loans');
     if(used.has(mapping.source))fail('Each planning source can be mapped only once');used.add(mapping.source);
     if(mapping.source!=='income'&&mapping.source!=='ira'&&!plan.loans.some(l=>`loan:${l.id}`===mapping.source)&&!(plan.goals??[]).some(g=>`goal:${g.id}`===mapping.source))fail('Only salary income, IRA, loan and savings goal contributions can populate budget allocations');
-    for(const month of selected){const row=plan.monthly.find(r=>r.month===month);const value=isIncome?row.grossAfterDeferralCents:mapping.source==='ira'?row.iraCents:mapping.source.startsWith('goal:')?row.goals[mapping.source.slice(5)]??0:row.loans[mapping.source.slice(5)]??0;const key=`${month}/${mapping.categoryId}`;const cell=result.get(key)??{month,categoryId:mapping.categoryId,kind:isIncome?'income':'expense',amountCents:0,preserveExisting:preserveStartMonth&&!!plan.startDate&&plan.startDate.slice(8)!=='01'&&month===plan.startDate.slice(0,7)};cell.amountCents+=value;result.set(key,cell);}
+    for(const month of selected){const row=plan.monthly.find(r=>r.month===month);const value=isIncome?row.netPayCents:mapping.source==='ira'?row.iraCents:mapping.source.startsWith('goal:')?row.goals[mapping.source.slice(5)]??0:row.loans[mapping.source.slice(5)]??0;const key=`${month}/${mapping.categoryId}`;const cell=result.get(key)??{month,categoryId:mapping.categoryId,kind:isIncome?'income':'expense',amountCents:0,preserveExisting:preserveStartMonth&&!!plan.startDate&&plan.startDate.slice(8)!=='01'&&month===plan.startDate.slice(0,7)};cell.amountCents+=value;result.set(key,cell);}
   }
   if(!result.size)fail('Choose at least one category mapping');
   return [...result.values()];

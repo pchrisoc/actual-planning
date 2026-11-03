@@ -38,7 +38,7 @@ export async function renderPlanPdf({input,plan,preview=null}) {
   heading('Income and contribution settings');
   table(['Setting','Value'],[
     ['Plan name',input.name||'Unsaved plan'],
-    ['Annual salary before tax',money(input.annualGrossCents)],['First contribution / pay date',input.firstPayDate],['Frequency',input.frequency],['Calendar dates / remaining dates',`${plan.annualPayPeriods} / ${plan.rows.length}`],
+    ['Annual salary before tax',money(input.annualGrossCents)],['Estimated combined tax rate',`${plan.taxRatePct}% · editable planning estimate`],['Estimated taxes / post-tax pay after 401(k)',`${money(plan.totalTaxCents)} / ${money(plan.totalNetPayCents)}`],['First contribution / pay date',input.firstPayDate],['Frequency',input.frequency],['Calendar dates / remaining dates',`${plan.annualPayPeriods} / ${plan.rows.length}`],
     ['Employee 401(k) limit / prior YTD',`${money(input.k401.limitCents)} / ${money(input.k401.ytdCents)}`],['401(k) target / projected completion',`${input.k401.targetDate} / ${plan.k401FinishDate??'Not reached'}`],['401(k) contribution per date (up to)',money(plan.k401RequiredPerPeriodCents)],
     ['Combined IRA limit / prior YTD',`${money(input.ira.limitCents)} / ${money(input.ira.ytdCents)}`],['Roth IRA target / projected completion',`${input.ira.targetDate} / ${plan.iraFinishDate??'Not reached'}`],['Roth IRA contribution per date (up to)',money(plan.iraRequiredPerPeriodCents)],
     ['Employer method',input.employer.mode==='match'?'Match employee contributions':'Percentage of gross salary'],['Employer rate / eligible salary percentage',`${input.employer.ratePct}% / ${input.employer.mode==='match'?input.employer.matchSalaryCapPct+'%':'Not applicable'}`],['Employer annual cap / prior YTD',`${input.employer.annualCapCents===null?'No dollar cap':money(input.employer.annualCapCents)} / ${money(input.employer.ytdCents)}`],['Projected employer contribution',money(plan.employerContributionCents)]
@@ -46,7 +46,7 @@ export async function renderPlanPdf({input,plan,preview=null}) {
   heading('Assumptions and limitations');
   for(const warning of plan.warnings)paragraph(warning,9,'#596755');
   nextPage();heading('Monthly amounts');
-  table(['Month','Gross pay','Employee 401(k)','Employer','Roth IRA','Loans','Goals'],plan.monthly.map(r=>[r.month,...['grossCents','k401Cents','employerCents','iraCents','loanPaymentsCents','goalContributionsCents'].map(k=>money(r[k]))]),[60,75,75,75,75,75,width-435]);
+  table(['Month','Gross','401(k)','Est. tax','Post-tax pay','Employer','Roth IRA','Loans','Goals'],plan.monthly.map(r=>[r.month,...['grossCents','k401Cents','taxCents','netPayCents','employerCents','iraCents','loanPaymentsCents','goalContributionsCents'].map(k=>money(r[k]))]),[50,58,52,55,58,52,50,54,width-429]);
   if(input.loans.length){
     heading('Loan settings');
     table(['Loan','Balance','APR','Target','Payment override'],input.loans.map(l=>[l.name,money(l.balanceCents),`${l.aprPct}%`,l.targetDate,l.monthlyPaymentCents?money(l.monthlyPaymentCents):'Automatic']),[151,90,50,100,width-391]);
@@ -69,7 +69,7 @@ export async function renderPlanPdf({input,plan,preview=null}) {
     table(['Year','Contributions','Cumulative interest','Forecast balance'],[...years].map(([year,r])=>[year,money(r.contributions),money(r.final.interestCents),money(r.final.balanceCents)]),[70,140,150,width-360]);
   }
   nextPage();heading('Contribution dates and running totals');
-  table(['Date','Gross pay','401(k)','401(k) YTD','Employer','Roth IRA','IRA YTD'],plan.rows.map(r=>[r.date,...['grossCents','k401Cents','k401YtdCents','employerCents','iraCents','iraYtdCents'].map(k=>money(r[k]))]),[64,75,72,75,75,75,width-436]);
+  table(['Date','Gross','401(k)','401(k) YTD','Est. tax','Post-tax pay','Employer','Roth IRA','IRA YTD'],plan.rows.map(r=>[r.date,...['grossCents','k401Cents','k401YtdCents','taxCents','netPayCents','employerCents','iraCents','iraYtdCents'].map(k=>money(r[k]))]),[60,55,50,50,55,55,50,50,width-425]);
   nextPage();heading('Actual budget preview');
   if(preview){
     paragraph(`Budget preview: ${preview.cells.length} selected category/month cells. Existing allocations in a partial first month may be retained separately from the remaining-period forecast.`,9);

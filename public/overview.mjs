@@ -6,7 +6,6 @@ export function buildOverview(plan,input,actual=null){
   const months=plan.monthly.filter(m=>m.month>=plan.startDate.slice(0,7));
   const series=[];
   const add=(key,label,values,color)=>series.push({key,label,values,color:color||palette[series.length%palette.length]});
-  add('401k','Employee 401(k)',months.map(m=>m.k401Cents),'#286b58');
   add('ira','Roth IRA',months.map(m=>m.iraCents),'#6677bc');
   for(const loan of plan.loans)add(`loan:${loan.id}`,loan.name,months.map(m=>amount(m.loans?.[loan.id])));
   for(const goal of plan.goals??[])add(`goal:${goal.id}`,goal.name,months.map(m=>amount(m.goals?.[goal.id])));
@@ -24,10 +23,10 @@ export function buildOverview(plan,input,actual=null){
     if(values.some(v=>v>0))add(`actual:${c.id}`,c.name,values);
   }
   const rows=months.map((m,i)=>{
-    const committedCents=sum(series.map(s=>s.values[i])),grossCents=m.grossCents;
-    return {month:m.month,grossCents,committedCents,remainingCents:Math.max(0,grossCents-committedCents),shortfallCents:Math.max(0,committedCents-grossCents),employerCents:m.employerCents,actualAvailable:!!actualMonths[i]&&!unmappedSources.length};
+    const committedCents=sum(series.map(s=>s.values[i])),grossCents=m.grossCents,netPayCents=m.netPayCents??grossCents;
+    return {month:m.month,grossCents,taxCents:m.taxCents??0,k401Cents:m.k401Cents,netPayCents,committedCents,remainingCents:Math.max(0,netPayCents-committedCents),shortfallCents:Math.max(0,committedCents-netPayCents),employerCents:m.employerCents,actualAvailable:!!actualMonths[i]&&!unmappedSources.length};
   });
-  add('remaining','Unassigned in this view · before tax',rows.map(r=>r.remainingCents),'#dbe7da');
+  add('remaining','Unassigned after tax & 401(k)',rows.map(r=>r.remainingCents),'#dbe7da');
   const events=[];
   const retirement=(key,name,settings,finish)=>{
     const funded=settings.ytdCents>=settings.limitCents;
@@ -44,11 +43,14 @@ export function buildOverview(plan,input,actual=null){
 export function wageSplit(overview,month='all'){
   const indices=overview.rows.map((r,i)=>i).filter(i=>month==='all'||overview.rows[i].month===month);
   const grossCents=sum(indices.map(i=>overview.rows[i].grossCents));
+  const taxCents=sum(indices.map(i=>overview.rows[i].taxCents??0));
+  const k401Cents=sum(indices.map(i=>overview.rows[i].k401Cents??0));
+  const netPayCents=sum(indices.map(i=>overview.rows[i].netPayCents??overview.rows[i].grossCents));
   const parts=overview.series.map(s=>({...s,amountCents:sum(indices.map(i=>s.values[i]))}));
   const committedCents=sum(parts.filter(s=>s.key!=='remaining').map(s=>s.amountCents));
-  const remainder=parts.find(s=>s.key==='remaining');if(remainder)remainder.amountCents=Math.max(0,grossCents-committedCents);
-  for(const part of parts)part.percent=grossCents>0?part.amountCents/grossCents*100:null;
-  return {grossCents,committedCents,parts,netRemainderCents:grossCents-committedCents,shortfallCents:Math.max(0,committedCents-grossCents),monthlyShortfallCents:sum(indices.map(i=>overview.rows[i].shortfallCents)),employerCents:sum(indices.map(i=>overview.rows[i].employerCents)),incomplete:indices.some(i=>!overview.rows[i].actualAvailable)};
+  const remainder=parts.find(s=>s.key==='remaining');if(remainder)remainder.amountCents=Math.max(0,netPayCents-committedCents);
+  for(const part of parts)part.percent=netPayCents>0?part.amountCents/netPayCents*100:null;
+  return {grossCents,taxCents,k401Cents,netPayCents,committedCents,parts,netRemainderCents:netPayCents-committedCents,shortfallCents:Math.max(0,committedCents-netPayCents),monthlyShortfallCents:sum(indices.map(i=>overview.rows[i].shortfallCents)),employerCents:sum(indices.map(i=>overview.rows[i].employerCents)),incomplete:indices.some(i=>!overview.rows[i].actualAvailable)};
 }
 function el(tag,text,className){const e=document.createElement(tag);if(text!==undefined)e.textContent=text;if(className)e.className=className;return e;}
 function svgNode(tag,attrs={},text){const e=document.createElementNS('http://www.w3.org/2000/svg',tag);for(const[k,v]of Object.entries(attrs))e.setAttribute(k,v);if(text!==undefined)e.textContent=text;return e;}
@@ -59,41 +61,41 @@ export function renderOverview(plan,input,actual){
   const overview=buildOverview(plan,input,actual),root=document.getElementById('overview'),bottom=document.getElementById('wage-split');root.hidden=false;bottom.hidden=false;
   const charts=document.getElementById('overview-charts');charts.replaceChildren();
   const coverage=el('p',undefined,'note');coverage.textContent=overview.unmappedSources.length?`Map ${overview.unmappedSources.join(', ')} to Actual categories in Populate below. Until then, existing Actual expense allocations are excluded to avoid counting the same commitment twice. This graph currently shows modeled plan items only.`:overview.missingMonths.length?`Actual allocations unavailable for ${overview.missingMonths.join(', ')}. These months show modeled plan items only; unassigned amounts are incomplete.`:'Includes existing Actual allocations outside your mapped plan categories.';charts.append(coverage);
-  charts.append(el('p',`From ${plan.startDate}. Forecast contributions replace mapped category amounts in this view, while other positive Actual allocations are included. Partial-month protection is handled separately in the budget preview. Taxes and benefits are not modeled.`,'muted'));
+  charts.append(el('p',`From ${plan.startDate}. Forecast contributions replace mapped category amounts in this view, while other positive Actual allocations are included. Budget amounts use estimated take-home pay after the ${plan.taxRatePct}% tax assumption and 401(k). The flat estimate is not a tax calculation; benefits are not modeled.`,'muted'));
   const selected=document.getElementById('wage-scope'),previousScope=selected.value;selected.replaceChildren(new Option('All planned dates','all'),...overview.rows.map(r=>new Option(r.month,r.month)));if([...selected.options].some(option=>option.value===previousScope))selected.value=previousScope;
   const detail=el('div',undefined,'overview-detail');detail.setAttribute('aria-live','polite');
   const redrawSplit=()=>{
     const month=selected.value,split=wageSplit(overview,month),holder=document.getElementById('wage-split-content');holder.replaceChildren();
-    holder.append(el('p',`${month==='all'?`Planned ${plan.year} wages from ${plan.startDate}`:month} · ${money(split.grossCents)} gross wage. Percentages use this amount as 100%.`));
-    if(!split.grossCents)holder.append(el('p','No wage is scheduled in this selection. Percentages are unavailable.','note'));
-    if(split.incomplete)holder.append(el('p',overview.unmappedSources.length?'Incomplete: map the active plan sources to Actual categories to include existing expenses without double-counting. Unassigned amounts must still cover those costs, taxes and benefits.':'Incomplete: some Actual allocations could not be read. Unassigned amounts still need to cover missing costs, taxes and benefits.','note'));
-    const total=sum(split.parts.map(p=>p.amountCents)),max=Math.max(split.grossCents,total,1),bar=svgRoot(960,88,'Percentage allocation of planned gross wage');bar.classList.add('wage-percentage-bar');let x=0;
-    for(const part of split.parts){const width=part.amountCents/max*920;if(!width)continue;const rect=svgNode('rect',{x:20+x,y:12,width,height:36,fill:part.color,tabindex:0,role:'img','aria-label':`${part.label}: ${money(part.amountCents)}, ${part.percent===null?'no wage':part.percent.toFixed(1)+'%'}`});title(rect,rect.getAttribute('aria-label'));bar.append(rect);x+=width;}
-    const boundary=20+split.grossCents/max*920;bar.append(svgNode('line',{x1:boundary,x2:boundary,y1:7,y2:55,stroke:'#183834','stroke-width':2}),svgNode('text',{x:Math.min(920,Math.max(40,boundary)),y:75,'text-anchor':'end','font-size':13,fill:'#183834'},split.grossCents?'100% of wage':'No wage'));holder.append(bar);
-    if(split.shortfallCents)holder.append(el('p',`Overallocated by ${money(split.shortfallCents)} (${split.grossCents?(split.shortfallCents/split.grossCents*100).toFixed(1)+'% of wage':'no scheduled wage'}). The bar extends beyond the 100% marker.`,'overview-shortfall'));
-    if(month==='all'&&split.monthlyShortfallCents)holder.append(el('p',`Individual months have ${money(split.monthlyShortfallCents)} of combined shortfalls before taxes and benefits. Annual totals can mask these timing gaps.`,'overview-shortfall'));
+    holder.append(el('p',`${month==='all'?`Planned ${plan.year} wages from ${plan.startDate}`:month} · ${money(split.grossCents)} gross − ${money(split.taxCents)} estimated tax − ${money(split.k401Cents)} 401(k) = ${money(split.netPayCents)} post-tax pay available for budgeting. Percentages use post-tax pay as 100%.`));
+    if(!split.netPayCents)holder.append(el('p','No post-tax pay is scheduled in this selection. Percentages are unavailable.','note'));
+    if(split.incomplete)holder.append(el('p',overview.unmappedSources.length?'Incomplete: map the active plan sources to Actual categories to include existing expenses without double-counting. Unassigned amounts must still cover those costs.':'Incomplete: some Actual allocations could not be read. Unassigned amounts still need to cover missing costs.','note'));
+    const total=sum(split.parts.map(p=>p.amountCents)),max=Math.max(split.netPayCents,total,1),bar=svgRoot(960,88,'Percentage allocation of post-tax pay');bar.classList.add('wage-percentage-bar');let x=0;
+    for(const part of split.parts){const width=part.amountCents/max*920;if(!width)continue;const rect=svgNode('rect',{x:20+x,y:12,width,height:36,fill:part.color,tabindex:0,role:'img','aria-label':`${part.label}: ${money(part.amountCents)}, ${part.percent===null?'no take-home pay':part.percent.toFixed(1)+'% of post-tax pay'}`});title(rect,rect.getAttribute('aria-label'));bar.append(rect);x+=width;}
+    const boundary=20+split.netPayCents/max*920;bar.append(svgNode('line',{x1:boundary,x2:boundary,y1:7,y2:55,stroke:'#183834','stroke-width':2}),svgNode('text',{x:Math.min(920,Math.max(40,boundary)),y:75,'text-anchor':'end','font-size':13,fill:'#183834'},split.netPayCents?'100% of post-tax pay':'No take-home pay'));holder.append(bar);
+    if(split.shortfallCents)holder.append(el('p',`Post-tax budget overallocated by ${money(split.shortfallCents)} (${split.netPayCents?(split.shortfallCents/split.netPayCents*100).toFixed(1)+'% of post-tax pay':'no take-home pay'}). The bar extends beyond the 100% marker.`,'overview-shortfall'));
+    if(month==='all'&&split.monthlyShortfallCents)holder.append(el('p',`Individual months have ${money(split.monthlyShortfallCents)} of post-tax shortfalls. Annual totals can mask these timing gaps.`,'overview-shortfall'));
     const breakdown=el('div',undefined,'wage-breakdown');
     for(const part of split.parts){const row=el('div',undefined,'wage-part');row.append(legendPart(part.color,part.label),el('strong',part.percent===null?'—':`${part.percent.toFixed(1)}%`),el('span',money(part.amountCents)));breakdown.append(row);}holder.append(breakdown);
-    holder.append(el('p',`Employer contributions: ${money(split.employerCents)} extra, shown separately and excluded from wage percentages. Unassigned money is not take-home pay. This chart is a forecast, not a confirmation that allocations were applied.`,'muted'));
-    detail.textContent=month==='all'?`All planned dates: ${money(split.grossCents)} gross wages; ${money(split.committedCents)} planned allocations; ${money(split.netRemainderCents)} net unassigned before taxes and benefits.`:`${month}: ${money(split.grossCents)} gross wages; ${money(split.committedCents)} planned allocations; ${money(split.netRemainderCents)} net unassigned before taxes and benefits.`;
+    holder.append(el('p',`Employer contributions: ${money(split.employerCents)} extra, shown separately. Unassigned money is estimated post-tax pay after planned allocations. This chart is a forecast, not a confirmation that allocations were applied.`,'muted'));
+    detail.textContent=month==='all'?`All planned dates: ${money(split.netPayCents)} post-tax pay; ${money(split.committedCents)} planned allocations; ${money(split.netRemainderCents)} unassigned.`:`${month}: ${money(split.netPayCents)} post-tax pay; ${money(split.committedCents)} planned allocations; ${money(split.netRemainderCents)} unassigned.`;
   };
   selected.onchange=redrawSplit;
   charts.append(el('h3','Monthly wage & allocation forecast'),el('p','Select a month in the chart to inspect its wage percentages below. Hover or focus a bar for amounts.','muted'));
-  const monthly=svgRoot(960,360,'Monthly wage breakdown, gross wage line and separate employer contributions');monthly.setAttribute('role','group');
-  const peak=Math.max(1,...overview.rows.map(r=>Math.max(r.grossCents,r.committedCents,r.employerCents))),tickBase=10**Math.floor(Math.log10(peak/4)),max=Math.ceil(peak/4/tickBase)*tickBase*4,plot={left:88,top:20,width:840,height:270};
+  const monthly=svgRoot(960,360,'Monthly post-tax budget, gross wage, estimated tax, take-home pay and employer contributions');monthly.setAttribute('role','group');
+  const peak=Math.max(1,...overview.rows.map(r=>Math.max(r.grossCents,r.netPayCents,r.taxCents,r.committedCents,r.employerCents))),tickBase=10**Math.floor(Math.log10(peak/4)),max=Math.ceil(peak/4/tickBase)*tickBase*4,plot={left:88,top:20,width:840,height:270};
   const y=v=>plot.top+plot.height-v/max*plot.height;
   for(let i=0;i<=4;i++){const v=max*i/4;monthly.append(svgNode('line',{x1:plot.left,y1:y(v),x2:928,y2:y(v),stroke:'#dce4da'}),svgNode('text',{x:78,y:y(v)+4,'text-anchor':'end','font-size':12,fill:'#53786b'},money(v)));}
-  const step=plot.width/overview.rows.length,points=[],employerPoints=[];
+  const step=plot.width/overview.rows.length,grossPoints=[],netPoints=[],taxPoints=[],employerPoints=[];
   overview.rows.forEach((row,i)=>{
-    const x=plot.left+i*step+step*.18,width=step*.64,g=svgNode('g',{tabindex:0,role:'button','aria-label':`${row.month}: gross ${money(row.grossCents)}, planned ${money(row.committedCents)}, unassigned ${money(row.grossCents-row.committedCents)}. Select wage breakdown.`});
+    const x=plot.left+i*step+step*.18,width=step*.64,g=svgNode('g',{tabindex:0,role:'button','aria-label':`${row.month}: gross ${money(row.grossCents)}, estimated tax ${money(row.taxCents)}, post-tax pay ${money(row.netPayCents)}, planned ${money(row.committedCents)}, unassigned ${money(row.remainingCents)}. Select wage breakdown.`});
     let accumulated=0;for(const s of overview.series){const v=s.values[i];if(v){g.append(svgNode('rect',{x,y:y(accumulated+v),width,height:v/max*plot.height,fill:s.color}));accumulated+=v;}}
     const choose=()=>{selected.value=row.month;redrawSplit();};g.addEventListener('click',choose);g.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();choose();}});
-    title(g,`${row.month}\n${overview.series.map(s=>`${s.label}: ${money(s.values[i])}`).join('\n')}\nGross wage: ${money(row.grossCents)}\nEmployer extra: ${money(row.employerCents)}${row.actualAvailable?'':'\nActual allocations incomplete'}`);monthly.append(g);
-    const cx=x+width/2;points.push([cx,y(row.grossCents)]);employerPoints.push([cx,y(row.employerCents)]);monthly.append(svgNode('text',{x:cx,y:316,'text-anchor':'middle','font-size':12,fill:'#53786b'},new Date(row.month+'-01T00:00:00Z').toLocaleString('en-US',{month:'short',timeZone:'UTC'})+(row.actualAvailable?'':'*')));
+    title(g,`${row.month}\nGross wage: ${money(row.grossCents)}\nEstimated tax: ${money(row.taxCents)}\nEmployee 401(k): ${money(row.k401Cents)}\nPost-tax pay: ${money(row.netPayCents)}\n${overview.series.map(s=>`${s.label}: ${money(s.values[i])}`).join('\n')}\nEmployer extra: ${money(row.employerCents)}${row.actualAvailable?'':'\nActual allocations incomplete'}`);monthly.append(g);
+    const cx=x+width/2;grossPoints.push([cx,y(row.grossCents)]);netPoints.push([cx,y(row.netPayCents)]);taxPoints.push([cx,y(row.taxCents)]);employerPoints.push([cx,y(row.employerCents)]);monthly.append(svgNode('text',{x:cx,y:316,'text-anchor':'middle','font-size':12,fill:'#53786b'},new Date(row.month+'-01T00:00:00Z').toLocaleString('en-US',{month:'short',timeZone:'UTC'})+(row.actualAvailable?'':'*')));
     if(row.shortfallCents)monthly.append(svgNode('text',{x:cx,y:y(row.committedCents)-7,'text-anchor':'middle','font-size':11,fill:'#ad3c39'},'Over'));
   });
-  for(const [pointsList,color,dash]of [[points,'#183834',''],[employerPoints,'#b3872b','5 4']])monthly.append(svgNode('path',{d:pointsList.map(([x,y],i)=>`${i?'L':'M'}${x},${y}`).join(' '),fill:'none',stroke:color,'stroke-width':2,'stroke-dasharray':dash,'pointer-events':'none'}));
-  monthly.append(svgNode('text',{x:88,y:345,'font-size':12,fill:'#53786b'},`${plan.year} · * Actual allocations incomplete · Dark line: gross wage · Dashed gold: employer extra`));
+  for(const [pointsList,color,dash]of [[grossPoints,'#183834',''],[netPoints,'#286b58',''],[taxPoints,'#ad6848','4 3'],[employerPoints,'#b3872b','5 4']])monthly.append(svgNode('path',{d:pointsList.map(([x,y],i)=>`${i?'L':'M'}${x},${y}`).join(' '),fill:'none',stroke:color,'stroke-width':2,'stroke-dasharray':dash,'pointer-events':'none'}));
+  monthly.append(svgNode('text',{x:88,y:345,'font-size':12,fill:'#53786b'},`${plan.year} · * Actual allocations incomplete · Dark: gross · Green: post-tax pay · Dashed terracotta: tax · Dashed gold: employer extra`));
   const scroller=el('div',undefined,'overview-scroll');scroller.append(monthly);charts.append(scroller);
   const legend=el('div',undefined,'overview-legend');for(const s of overview.series)legend.append(legendPart(s.color,s.label));charts.append(legend,detail);
   charts.append(el('h3','When contributions, loans & goals finish'),el('p','Solid dots show projected finishes. Open circles show requested target dates. Employer dates mark only the last contribution within this plan.','muted'));
@@ -107,6 +109,6 @@ export function renderOverview(plan,input,actual){
     const statusText=event.date?`${event.date} · ${event.status}`:event.status;const status=svgNode('text',{x:725,y:y+4,'font-size':12,fill:'#53786b'},statusText.length>43?statusText.slice(0,42)+'…':statusText);title(status,`${event.name}: ${event.status}${event.targetDate?' · requested '+event.targetDate:''}`);timeline.append(status);
   });
   const timelineScroll=el('div',undefined,'overview-scroll overview-timeline');timelineScroll.append(timeline);charts.append(timelineScroll);
-  const details=el('details'),summary=el('summary','Accessible finish dates & monthly figures'),table=el('table'),head=el('tr');for(const name of ['Item','Projected finish','Requested target','Status'])head.append(el('th',name));table.append(head);for(const event of overview.events){const row=el('tr');for(const value of [event.name,event.date||'Not reached',event.targetDate||'—',event.status])row.append(el('td',value));table.append(row);}details.append(summary,table);const figures=el('div',undefined,'scroll'),monthlyTable=el('table'),mh=el('tr');for(const value of ['Month','Gross wage',...overview.series.map(s=>s.label),'Employer extra','Shortfall'])mh.append(el('th',value));monthlyTable.append(mh);overview.rows.forEach((r,i)=>{const tr=el('tr');for(const v of [r.month,money(r.grossCents),...overview.series.map(s=>money(s.values[i])),money(r.employerCents),money(r.shortfallCents)])tr.append(el('td',v));monthlyTable.append(tr);});figures.append(monthlyTable);details.append(figures);charts.append(details);
+  const details=el('details'),summary=el('summary','Accessible finish dates & monthly figures'),table=el('table'),head=el('tr');for(const name of ['Item','Projected finish','Requested target','Status'])head.append(el('th',name));table.append(head);for(const event of overview.events){const row=el('tr');for(const value of [event.name,event.date||'Not reached',event.targetDate||'—',event.status])row.append(el('td',value));table.append(row);}details.append(summary,table);const figures=el('div',undefined,'scroll'),monthlyTable=el('table'),mh=el('tr');for(const value of ['Month','Gross wage','Estimated tax','Employee 401(k)','Post-tax pay',...overview.series.map(s=>s.label),'Employer extra','Shortfall'])mh.append(el('th',value));monthlyTable.append(mh);overview.rows.forEach((r,i)=>{const tr=el('tr');for(const v of [r.month,money(r.grossCents),money(r.taxCents),money(r.k401Cents),money(r.netPayCents),...overview.series.map(s=>money(s.values[i])),money(r.employerCents),money(r.shortfallCents)])tr.append(el('td',v));monthlyTable.append(tr);});figures.append(monthlyTable);details.append(figures);charts.append(details);
   redrawSplit();
 }

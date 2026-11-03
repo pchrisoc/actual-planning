@@ -31,6 +31,22 @@ test('salary-based employer contribution continues after employee max-out',()=>{
   const p=example();p.employer={mode:'salary',ratePct:3,matchSalaryCapPct:0,annualCapCents:null,ytdCents:0};
   const r=calculatePlan(p);assert.ok(r.rows.at(-1).employerCents>0);assert.equal(r.rows.at(-1).k401Cents,0);
 });
+test('editable tax rate calculates estimated taxes and post-tax pay after 401(k)',()=>{
+  const p=example();p.frequency='monthly';p.annualGrossCents=12000000;p.taxRatePct=25;p.k401.targetDate='2027-06-30';
+  const r=calculatePlan(p);
+  assert.equal(r.taxRatePct,25);
+  assert.equal(r.totalTaxCents,r.monthly.reduce((sum,m)=>sum+m.taxCents,0));
+  assert.equal(r.totalNetPayCents,r.monthly.reduce((sum,m)=>sum+m.netPayCents,0));
+  assert.equal(r.totalTaxCents,r.rows.reduce((sum,row)=>sum+Math.round(row.grossAfterDeferralCents*.25),0));
+  assert.equal(r.totalNetPayCents,12000000-2450000-r.totalTaxCents);
+  assert.equal(r.rows[0].netPayCents,r.rows[0].grossCents-r.rows[0].k401Cents-r.rows[0].taxCents);
+  assert.equal(calculatePlan({...p,taxRatePct:0}).totalTaxCents,0);
+  assert.throws(()=>calculatePlan({...p,taxRatePct:100.1}),/Estimated tax rate/);
+});
+test('legacy plans without a tax rate use the editable California estimate default',()=>{
+  const p=example();delete p.taxRatePct;
+  const r=calculatePlan(p);assert.equal(r.taxRatePct,25);assert.ok(r.totalTaxCents>0);assert.ok(r.totalNetPayCents<r.rows.reduce((sum,row)=>sum+row.grossAfterDeferralCents,0));
+});
 test('impossible 401(k) goal is flagged and cannot consume more than gross',()=>{
   const p=example();p.annualGrossCents=10000;
   const r=calculatePlan(p);assert.ok(r.rows.every(x=>x.k401Cents<=x.grossCents));assert.ok(r.warnings.some(x=>x.includes('not reachable')));
