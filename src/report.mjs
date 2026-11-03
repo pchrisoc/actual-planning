@@ -38,11 +38,23 @@ export async function renderPlanPdf({input,plan,preview=null}) {
   heading('Income and contribution settings');
   table(['Setting','Value'],[
     ['Plan name',input.name||'Unsaved plan'],
-    ['Annual salary before tax',money(input.annualGrossCents)],['Estimated combined tax rate',`${plan.taxRatePct}% · editable planning estimate`],['Estimated taxes / post-tax pay after 401(k)',`${money(plan.totalTaxCents)} / ${money(plan.totalNetPayCents)}`],['First contribution / pay date',input.firstPayDate],['Frequency',input.frequency],['Calendar dates / remaining dates',`${plan.annualPayPeriods} / ${plan.rows.length}`],
+    ['Annual salary before tax',money(input.annualGrossCents)],['Tax method',plan.tax?'Single filer federal + state/payroll estimate':`${plan.taxRatePct}% combined flat estimate`],['Estimated taxes / post-tax pay after 401(k)',`${money(plan.totalTaxCents)} / ${money(plan.totalNetPayCents)}`],['First contribution / pay date',input.firstPayDate],['Frequency',input.frequency],['Calendar dates / remaining dates',`${plan.annualPayPeriods} / ${plan.rows.length}`],
     ['Employee 401(k) limit / prior YTD',`${money(input.k401.limitCents)} / ${money(input.k401.ytdCents)}`],['401(k) target / projected completion',`${input.k401.targetDate} / ${plan.k401FinishDate??'Not reached'}`],['401(k) contribution per date (up to)',money(plan.k401RequiredPerPeriodCents)],
     ['Combined IRA limit / prior YTD',`${money(input.ira.limitCents)} / ${money(input.ira.ytdCents)}`],['Roth IRA target / projected completion',`${input.ira.targetDate} / ${plan.iraFinishDate??'Not reached'}`],['Roth IRA contribution per date (up to)',money(plan.iraRequiredPerPeriodCents)],
     ['Employer method',input.employer.mode==='match'?'Match employee contributions':'Percentage of gross salary'],['Employer rate / eligible salary percentage',`${input.employer.ratePct}% / ${input.employer.mode==='match'?input.employer.matchSalaryCapPct+'%':'Not applicable'}`],['Employer annual cap / prior YTD',`${input.employer.annualCapCents===null?'No dollar cap':money(input.employer.annualCapCents)} / ${money(input.employer.ytdCents)}`],['Projected employer contribution',money(plan.employerContributionCents)]
   ],[width*.55,width*.45]);
+  if(plan.tax){
+    heading('Federal tax and student loan interest');
+    table(['Setting','Value'],[
+      ['Standard deduction assumption',money(plan.tax.standardDeductionCents)],
+      ['Prior wages / prior qualified interest',`${money(input.tax.priorGrossCents??0)} / ${money(input.tax.priorInterestCents??0)}`],
+      ['State and payroll estimate on gross',`${input.tax.otherTaxRatePct??12.65}%`],
+      ['Student interest phaseout / cutoff (MAGI)',`${money(input.tax.phaseoutStartCents??8500000)} / ${money(input.tax.phaseoutEndCents??10000000)}`],
+      ['Taxable income before student interest',money(plan.tax.taxableBeforeInterestCents)]
+    ],[width*.55,width*.45]);
+    paragraph('Federal brackets: 2026 single-filer schedule held constant for planning. Future years assume full annual salary and continued 401(k) contributions. Interest savings below are excluded from monthly spending money; they are not a guaranteed refund.',9);
+    table(['Year','Qualified interest','MAGI','Interest deduction','Taxable income','Federal tax','Tax savings'],plan.loanTaxYears.map(t=>[t.year,...['interestCents','magiCents','studentLoanDeductionCents','taxableIncomeCents','federalTaxCents','studentLoanTaxSavingsCents'].map(k=>money(t[k]))]),[40,80,80,80,80,75,width-435]);
+  }
   heading('Assumptions and limitations');
   for(const warning of plan.warnings)paragraph(warning,9,'#596755');
   nextPage();heading('Monthly amounts');
@@ -50,6 +62,7 @@ export async function renderPlanPdf({input,plan,preview=null}) {
   if(input.loans.length){
     heading('Loan settings');
     table(['Loan','Balance','APR','Target','Payment override'],input.loans.map(l=>[l.name,money(l.balanceCents),`${l.aprPct}%`,l.targetDate,l.monthlyPaymentCents?money(l.monthlyPaymentCents):'Automatic']),[151,90,50,100,width-391]);
+    for(const loan of input.loans)paragraph(`${loan.name}: ${loan.studentLoan?'Qualified student loan':'Not included in student interest deduction'}. Autopay discount: ${loan.autopayDiscountPct??0} percentage points through ${loan.autopayEndDate??'2028-06-30'}, then ${loan.ongoingAutopayDiscountPct??0} points. ${loan.refinanceDate?`Assumed refinance: ${loan.refinanceDate} at final APR ${loan.refinanceAprPct}%.`:'No refinancing assumed.'}`,9);
     heading('Loan payoff projections');
     table(['Loan','Monthly payment','Payoff date','Interest to target','Remaining'],plan.loans.map(l=>[l.name,money(l.monthlyPaymentCents),l.payoffDate??'Not paid off',money(l.totalInterestCents),money(l.remainingCents)]),[151,90,100,85,width-426]);
   }

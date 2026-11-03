@@ -4,8 +4,8 @@ A self-hosted annual salary, retirement and loan planner connected to Actual Bud
 
 ## Annual planning flow
 
-1. Enter annual salary **before tax**, an estimated combined tax rate, planning year, first contribution/pay date, and weekly, biweekly or monthly frequency. The default 25% California estimate is editable and is not a personalized tax calculation.
-2. Set the employee 401(k) limit (default **$24,500**), prior YTD contributions across jobs, and the date you want to finish contributing.
+1. Enter annual salary **before tax**, a tax method, planning year, first contribution/pay date, and weekly, biweekly or monthly frequency. New plans use a single-filer federal estimate plus a separate editable state/payroll estimate; older plans retain their flat rate.
+2. Set the employee 401(k) limit (default **$24,500**), prior YTD contributions across jobs, and the date you want to finish contributing (new plans default to November 30).
 3. Configure employer contributions as a percentage of employee contributions or gross salary. Matching supports an eligible salary percentage, an optional annual dollar cap, and employer YTD contributions.
 4. Set the combined IRA limit (default **$7,500**), all prior IRA contributions, and the target Roth IRA completion date.
 5. Add individual loans with balances, APRs and payoff dates. Leave monthly payment blank to calculate a payoff payment, or enter a monthly payment override.
@@ -14,7 +14,15 @@ A self-hosted annual salary, retirement and loan planner connected to Actual Bud
 8. Give your plan a name before saving. Saved plans are listed by creation time, newest first; loading a plan does not change its position. Older unnamed plans receive a date-based label.
 9. Review current/proposed/delta values and preservation notes, export the budget CSV or complete PDF, or apply a reviewed preview when running a live, write-enabled Docker instance.
 
-The tax rate is a flat estimate applied to pay after employee 401(k) deferrals; it does not calculate tax brackets, filing status, deductions, withholding, payroll-tax limits or benefits. Review it against your paystub or a current tax estimator. Tax on savings-goal investment income is not modeled. The requested retirement defaults are editable planning inputs, not a claim about a tax year's published legal limits or personal eligibility. Roth eligibility is not determined. See [IRS retirement contribution information](https://www.irs.gov/retirement-plans/plan-participant-employee/retirement-topics-contributions) and [Roth IRA eligibility](https://www.irs.gov/retirement-plans/roth-iras).
+New plans calculate single-filer federal tax on wages after traditional 401(k), an editable standard deduction (your **$16,600 planning assumption**) and eligible student loan interest. Federal brackets use the [2026 IRS schedule](https://www.irs.gov/publications/p505), held constant for projections; $16,600 is not represented as a verified tax-year limit. The separate default **12.65%** state/payroll estimate applies to gross wages; it is an editable assumption, not a California tax calculation. Traditional 401(k) reduces federal taxable wages, but does not reduce payroll tax. No credits, other income, benefits or detailed state/payroll calculations are modeled. Flat mode retains the prior 25% combined estimate after 401(k).
+
+First-year tax wages equal scheduled pay plus the entered prior wages; enter prior wages if contributions YTD are nonzero. For example, $78,100 wages minus $24,500 traditional 401(k) minus $16,600 standard deduction gives **$37,000 federal taxable income before student interest**. That result depends on actual wages, not simply maxing the 401(k).
+
+Only loans explicitly marked qualified enter the [student interest deduction](https://www.irs.gov/publications/p970). Interest is capped at $2,500 across loans, then phased out using MAGI after 401(k) and before the standard deduction. The editable $85,000–$100,000 single-filer phaseout is a planning assumption based on published rules; at or above the cutoff there is no deduction. Savings equal the difference in federal tax with and without the deduction: $845 of interest at a 22% marginal rate saves $185.90 only if fully deductible and entirely in that bracket. At $37,000 taxable income, the modeled 12% rate saves $101.40. These savings appear separately and do not increase budgeted income or imply a guaranteed refund. Future-year tables recompute interest and deduction using full annual salary, continued 401(k) contributions and unchanged tax assumptions.
+
+Loan APRs are entered **before discounts**. Autopay discount points, expiration and ongoing discount are editable per loan and default to zero for compatibility and unconfirmed eligibility. Eligible federal autopay can be modeled with a total 1-point discount through June 30, 2028, then 0.25 points; confirm enrollment and eligibility with the servicer. See [Federal Student Aid](https://studentaid.gov/articles/prepare-for-payments/). The optional dated refinancing scenario uses a final offered APR including any discounts; approval and savings are not assumed. [Federal consolidation](https://studentaid.gov/articles/5-things-before-consolidating-student-loans/) uses a weighted-average rate; private refinancing can remove federal protections. Variable-rate payoff payments account for the selected discount expiration and refinancing date. Monthly interest uses the rate on the payment date, not daily proration.
+
+Retirement limits remain editable planning inputs. Confirm annual limits and [Roth eligibility](https://www.irs.gov/retirement-plans/roth-iras). Tax on savings-goal investment income is not modeled.
 
 ## Local development on the Mac
 
@@ -40,7 +48,7 @@ To connect from another machine, install dependencies with `npm ci` and configur
 - Employer money does not reduce the employee deferral limit or appear in the cash budget. Percentage matching stops when employee contributions stop. True-ups, bonuses, vesting, catch-ups, legal combined employer/employee limits and payroll restrictions are not modeled.
 - IRA YTD must include both Roth and traditional IRA contributions across accounts. All projections use the selected calendar year; prior-year IRA contributions made in a following year are not modeled.
 - Loan estimates use monthly APR/12 interest, with first payment on the payoff date's day of the month (clamped when needed). They are not daily-accrual servicer payoff quotes.
-- The editable effective tax-rate assumption is applied to gross pay after 401(k) deferrals. Estimated taxes and 401(k) are deducted before calculating post-tax pay. Salary may populate an income category using that post-tax amount; IRA, loans and savings goals can share an expense category; their monthly amounts are summed. Employer contributions are excluded from cash income. Unselected categories remain untouched.
+- The selected tax method determines estimated taxes as described above. Estimated taxes and 401(k) are deducted before calculating post-tax pay. Salary may populate an income category using that post-tax amount; IRA, loans and savings goals can share an expense category; their monthly amounts are summed. Employer contributions are excluded from cash income. Unselected categories remain untouched.
 
 ## Combined plan overview
 
