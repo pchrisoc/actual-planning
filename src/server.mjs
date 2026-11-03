@@ -53,7 +53,7 @@ createServer(async (req, res) => {
       const adapter={getCategories:async()=>actual.categories,getBudgetMonth:async month=>{const b=actual.budgets.find(b=>b.month===month&&b.status==='read');if(!b)throw new Error('Unavailable');return b.budget;}};
       const preview=await inspectAllocations(adapter,allocations);
       const id=randomUUID();
-      const record={...preview,policyVersion:2,planFingerprint:createHash('sha256').update(JSON.stringify(plan)).digest('hex'),id,createdAt:new Date().toISOString(),syncId:process.env.ACTUAL_BUDGET_SYNC_ID??actual.syncId};
+      const record={...preview,policyVersion:3,planFingerprint:createHash('sha256').update(JSON.stringify(plan)).digest('hex'),id,createdAt:new Date().toISOString(),syncId:process.env.ACTUAL_BUDGET_SYNC_ID??actual.syncId};
       await writeFile(join(storedRoot,`preview-${id}.json`),JSON.stringify(record),{mode:0o600,flag:'wx'});
       return send(res,200,{...record,writeEnabled,reason:process.env.ACTUAL_SNAPSHOT_FILE?'Local snapshot; reconnect to Actual for a fresh, writable preview.':!writeEnabled?'Actual write-back is disabled in this environment.':null});
     }
@@ -77,7 +77,7 @@ createServer(async (req, res) => {
       return await withActual(async api=>{
         try{const previous=JSON.parse(await readFile(jobPath,'utf8'));if(previous.previewId!==input.previewId)throw new Error('Request key belongs to a different preview');if(previous.status==='verified')return send(res,200,previous);return send(res,409,{error:'This request was already attempted. Inspect its audit before retrying.',job:previous});}catch(error){if(error.code!=='ENOENT')throw error;}
         const preview=JSON.parse(await readFile(join(storedRoot,`preview-${input.previewId}.json`),'utf8'));
-        if(preview.policyVersion!==2||Date.now()-Date.parse(preview.createdAt)>30*60*1000||preview.syncId!==process.env.ACTUAL_BUDGET_SYNC_ID)throw new Error('Preview expired or policy changed. Populate a fresh preview.');
+        if(preview.policyVersion!==3||Date.now()-Date.parse(preview.createdAt)>30*60*1000||preview.syncId!==process.env.ACTUAL_BUDGET_SYNC_ID)throw new Error('Preview expired or policy changed. Populate a fresh preview.');
         const job={previewId:preview.id,createdAt:new Date().toISOString(),status:'started',before:preview.cells};
         await writeFile(jobPath,JSON.stringify(job),{mode:0o600,flag:'wx'});
         try{Object.assign(job,await applyAllocations(api,preview,{allowOverwrite:input.allowOverwrite===true,backup:async client=>{const artifact=await exportBackup(client);job.backup=artifact;await writeFile(jobPath,JSON.stringify(job),{mode:0o600});return artifact;}}));}

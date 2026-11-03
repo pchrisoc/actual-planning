@@ -115,16 +115,17 @@ export function calculatePlan(input) {
 }
 export function buildAllocations(plan, mappings, months, categories, {preserveStartMonth=true}={}) {
   if(!Array.isArray(mappings)||!Array.isArray(months)||!months.length)fail('Select categories and at least one month');
-  const valid=new Set(categories.filter(c=>!c.hidden&&!c.is_income).map(c=>c.id));
+  const valid=new Map(categories.filter(c=>!c.hidden).map(c=>[c.id,c]));
   const selected=[...new Set(months)];
   if(selected.some(m=>!plan.monthly.some(r=>r.month===m)))fail('Invalid selected month');
   if(plan.startDate&&selected.some(m=>m<plan.startDate.slice(0,7)))fail('Select months on or after the plan start month');
   const used=new Set(), result=new Map();
   for(const mapping of [...mappings,...(plan.goals??[]).filter(g=>g.categoryId&&!mappings.some(m=>m.source===`goal:${g.id}`)).map(g=>({source:`goal:${g.id}`,categoryId:g.categoryId}))]){
-    if(!valid.has(mapping.categoryId))fail('Select an existing expense category');
+    const category=valid.get(mapping.categoryId),isIncome=mapping.source==='income';
+    if(!category||!!category.is_income!==isIncome)fail(isIncome?'Select an existing income category for salary':'Select an existing expense category for contributions and loans');
     if(used.has(mapping.source))fail('Each planning source can be mapped only once');used.add(mapping.source);
-    if(mapping.source!=='ira'&&!plan.loans.some(l=>`loan:${l.id}`===mapping.source)&&!(plan.goals??[]).some(g=>`goal:${g.id}`===mapping.source))fail('Only IRA, loan and savings goal contributions can populate cash budget allocations');
-    for(const month of selected){const row=plan.monthly.find(r=>r.month===month);const value=mapping.source==='ira'?row.iraCents:mapping.source.startsWith('goal:')?row.goals[mapping.source.slice(5)]??0:row.loans[mapping.source.slice(5)]??0;const key=`${month}/${mapping.categoryId}`;const cell=result.get(key)??{month,categoryId:mapping.categoryId,amountCents:0,preserveExisting:preserveStartMonth&&!!plan.startDate&&plan.startDate.slice(8)!=='01'&&month===plan.startDate.slice(0,7)};cell.amountCents+=value;result.set(key,cell);}
+    if(mapping.source!=='income'&&mapping.source!=='ira'&&!plan.loans.some(l=>`loan:${l.id}`===mapping.source)&&!(plan.goals??[]).some(g=>`goal:${g.id}`===mapping.source))fail('Only salary income, IRA, loan and savings goal contributions can populate budget allocations');
+    for(const month of selected){const row=plan.monthly.find(r=>r.month===month);const value=isIncome?row.grossCents:mapping.source==='ira'?row.iraCents:mapping.source.startsWith('goal:')?row.goals[mapping.source.slice(5)]??0:row.loans[mapping.source.slice(5)]??0;const key=`${month}/${mapping.categoryId}`;const cell=result.get(key)??{month,categoryId:mapping.categoryId,kind:isIncome?'income':'expense',amountCents:0,preserveExisting:preserveStartMonth&&!!plan.startDate&&plan.startDate.slice(8)!=='01'&&month===plan.startDate.slice(0,7)};cell.amountCents+=value;result.set(key,cell);}
   }
   if(!result.size)fail('Choose at least one category mapping');
   return [...result.values()];

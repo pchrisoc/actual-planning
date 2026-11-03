@@ -3,10 +3,12 @@ export async function inspectAllocations(api, allocations) {
   const categories=await api.getCategories();
   const groups=api.getCategoryGroups?await api.getCategoryGroups():[];
   const incomeGroups=new Set(groups.filter(g=>g.is_income).map(g=>g.id));
-  const valid=new Set(categories.filter(c=>!c.hidden&&!c.is_income&&!incomeGroups.has(c.group_id)).map(c=>c.id));
+  const valid=new Map(categories.filter(c=>!c.hidden).map(c=>[c.id,{...c,is_income:!!c.is_income||incomeGroups.has(c.group_id)}]));
   const months=new Map(),seen=new Set();
   const cells=[];
   for(const cell of allocations){
+    const categoryMetadata=valid.get(cell.categoryId),kind=cell.kind??'expense';
+    if(!['income','expense'].includes(kind)||!categoryMetadata||categoryMetadata.is_income!==(kind==='income'))throw new Error('Invalid budget allocation category type');
     if(!/^\d{4}-(0[1-9]|1[0-2])$/.test(cell.month)||!valid.has(cell.categoryId)||!Number.isSafeInteger(cell.amountCents)||cell.amountCents<0||cell.amountCents>1e12)throw new Error('Invalid budget allocation');
     const key=`${cell.month}/${cell.categoryId}`;if(seen.has(key))throw new Error('Duplicate budget cell');seen.add(key);
     if(!months.has(cell.month)){
@@ -17,7 +19,7 @@ export async function inspectAllocations(api, allocations) {
     const forecastAmountCents=cell.forecastAmountCents??cell.amountCents;
     const preserved=cell.preserveExisting===true&&beforeCents!==null&&beforeCents>0;
     const amountCents=preserved?beforeCents:forecastAmountCents;
-    cells.push({...cell,amountCents,forecastAmountCents,preserved,note:preserved?'Existing allocation kept: the plan starts partway through this month.':'',categoryName:categories.find(c=>c.id===cell.categoryId).name,beforeCents,deltaCents:beforeCents===null?null:amountCents-beforeCents,status:beforeCents===null?'unavailable':'read'});
+    cells.push({...cell,amountCents,forecastAmountCents,preserved,note:preserved?'Existing allocation kept: the plan starts partway through this month.':'',kind,categoryName:kind==='income'?`Gross income / ${categoryMetadata.name}`:categoryMetadata.name,beforeCents,deltaCents:beforeCents===null?null:amountCents-beforeCents,status:beforeCents===null?'unavailable':'read'});
   }
   return {cells,canApply:cells.every(c=>c.status==='read'),needsOverwrite:cells.some(c=>c.beforeCents!==0&&c.deltaCents!==0)};
 }

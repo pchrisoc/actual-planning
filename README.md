@@ -40,7 +40,7 @@ To connect from another machine, install dependencies with `npm ci` and configur
 - Employer money does not reduce the employee deferral limit or appear in the cash budget. Percentage matching stops when employee contributions stop. True-ups, bonuses, vesting, catch-ups, legal combined employer/employee limits and payroll restrictions are not modeled.
 - IRA YTD must include both Roth and traditional IRA contributions across accounts. All projections use the selected calendar year; prior-year IRA contributions made in a following year are not modeled.
 - Loan estimates use monthly APR/12 interest, with first payment on the payoff date's day of the month (clamped when needed). They are not daily-accrual servicer payoff quotes.
-- 401(k) deductions and employer contributions are excluded from category population. IRA, loans and savings goals can share a category; their monthly amounts are summed. Unselected categories remain untouched.
+- 401(k) deductions and employer contributions are excluded from category population. Salary may populate an income category; IRA, loans and savings goals can share an expense category; their monthly amounts are summed. Unselected categories remain untouched.
 
 ## Savings goals
 
@@ -50,7 +50,7 @@ Forecasts begin on the plan start date, accrue daily at APR/365 and deposit on t
 
 ## Safe budget population
 
-**Populate selected values** makes a draft and a preview only. Months before the plan start cannot be populated. When the plan begins after the first of a month, existing funded start-month allocations are kept by default, with the remaining-period forecast shown separately. Uncheck **Keep existing allocations in the partial first month** only to intentionally replace that month. This does not alter retirement contribution projections. The backend recalculates the plan, validates existing expense category IDs, and retrieves current allocations. Income categories cannot receive retirement/loan cash allocations.
+**Populate selected values** makes a draft and a preview only. Months before the plan start cannot be populated. When the plan begins after the first of a month, existing funded start-month allocations are kept by default, with the remaining-period forecast shown separately. Uncheck **Keep existing allocations in the partial first month** only to intentionally replace that month. This does not alter retirement contribution projections. The backend recalculates the plan, validates existing expense category IDs, and retrieves current allocations. Map **Gross salary income (before tax)** to an income category to populate scheduled gross pay from the annual wage. Annual salary is split exactly across that year's anchored pay dates, then summed by month; only dates on or after the plan start are included. Weekly and biweekly months vary with payday counts, while monthly pay is approximately annual wage / 12 with cent rounding. This is before taxes, employee 401(k) and benefits, not spendable take-home income. Only the salary source can target an income category; retirement, loan and savings contributions still require expense categories.
 
 The interface shows whether direct apply is on, and lists every apply blocker above the disabled button, including unreadable months and required confirmations. Confirmations unlock only when write-back is enabled and all selected months are readable.
 

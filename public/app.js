@@ -62,11 +62,11 @@ async function calculate(){
 function renderMonths(){const hadMonths=$('months').children.length>0,prior=[...$('months').querySelectorAll('input:checked')].map(i=>i.value.slice(5));$('months').replaceChildren();for(let m=1;m<=12;m++){const month=`${form.elements.year.value}-${String(m).padStart(2,'0')}`,l=el('label',undefined,'month'),i=el('input');i.type='checkbox';i.value=month;i.disabled=m<Number(form.elements.firstPayDate.value.slice(5,7));i.checked=!i.disabled&&(hadMonths?prior.includes(month.slice(5)):true);i.onchange=clearPreview;l.append(i,document.createTextNode(new Date(Number(form.elements.year.value),m-1,1).toLocaleString('en-US',{month:'short'})));$('months').append(l);}}
 function renderMappings(){
   $('mapping').replaceChildren();
-  const sources=[{id:'ira',name:'Roth IRA'},...[...$('loans').children].map(card=>({id:`loan:${card.dataset.id}`,name:card.querySelector('[data-field="name"]').value})),...[...$('goals').children].map(card=>({id:`goal:${card.dataset.id}`,name:`Savings goal: ${card.querySelector('[data-field="name"]').value||'Unnamed goal'}`}))];
+  const sources=[{id:'income',name:'Gross salary income (before tax)'},{id:'ira',name:'Roth IRA'},...[...$('loans').children].map(card=>({id:`loan:${card.dataset.id}`,name:card.querySelector('[data-field="name"]').value})),...[...$('goals').children].map(card=>({id:`goal:${card.dataset.id}`,name:`Savings goal: ${card.querySelector('[data-field="name"]').value||'Unnamed goal'}`}))];
   for(const source of sources){
     const label=el('label',source.name),select=el('select');select.dataset.source=source.id;select.setAttribute('aria-label',source.name);
     select.append(new Option(actual?'Do not populate':'Load Actual categories first',''));
-    for(const c of actual?.categories.filter(c=>!c.hidden&&!c.is_income)||[]){const group=actual.groups.find(g=>g.id===c.group_id);select.append(new Option(`${group?.name||'Category'} / ${c.name}`,c.id));}
+    for(const c of actual?.categories.filter(c=>!c.hidden&&!!c.is_income===(source.id==='income'))||[]){const group=actual.groups.find(g=>g.id===c.group_id);select.append(new Option(`${group?.name||'Category'} / ${c.name}`,c.id));}
     const selected=categoryMappings.get(source.id)||'';
     if(selected&&![...select.options].some(o=>o.value===selected))select.append(new Option(actual?'Saved category unavailable — choose another':'Saved category — refresh Actual to verify',selected));
     select.value=selected;
