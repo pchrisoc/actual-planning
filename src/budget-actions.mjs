@@ -14,7 +14,10 @@ export async function inspectAllocations(api, allocations) {
     }
     const category=months.get(cell.month)?.categoryGroups?.flatMap(g=>g.categories).find(c=>c.id===cell.categoryId);
     const beforeCents=Number.isSafeInteger(category?.budgeted)?category.budgeted:null;
-    cells.push({...cell,categoryName:categories.find(c=>c.id===cell.categoryId).name,beforeCents,deltaCents:beforeCents===null?null:cell.amountCents-beforeCents,status:beforeCents===null?'unavailable':'read'});
+    const forecastAmountCents=cell.forecastAmountCents??cell.amountCents;
+    const preserved=cell.preserveExisting===true&&beforeCents!==null&&beforeCents>0;
+    const amountCents=preserved?beforeCents:forecastAmountCents;
+    cells.push({...cell,amountCents,forecastAmountCents,preserved,note:preserved?'Existing allocation kept: the plan starts partway through this month.':'',categoryName:categories.find(c=>c.id===cell.categoryId).name,beforeCents,deltaCents:beforeCents===null?null:amountCents-beforeCents,status:beforeCents===null?'unavailable':'read'});
   }
   return {cells,canApply:cells.every(c=>c.status==='read'),needsOverwrite:cells.some(c=>c.beforeCents!==0&&c.deltaCents!==0)};
 }

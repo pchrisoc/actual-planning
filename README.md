@@ -11,13 +11,13 @@ A self-hosted annual salary, retirement and loan planner connected to Actual Bud
 5. Add individual loans with balances, APRs and payoff dates. Leave monthly payment blank to calculate a payoff payment, or enter a monthly payment override.
 6. Calculate to see per-date contributions, exact annual caps, monthly totals, employer contributions, loan payments and remaining balances.
 7. Load Actual categories, map Roth IRA and individual loans to existing expense categories, choose target months, and click **Populate selected values**.
-8. Review current/proposed/delta values, export the budget CSV, or apply a reviewed preview when running a live, write-enabled Docker instance.
+8. Review current/proposed/delta values and preservation notes, export the budget CSV or complete PDF, or apply a reviewed preview when running a live, write-enabled Docker instance.
 
 The requested retirement defaults are editable planning inputs. They are not a claim about a tax year's published legal limits or personal eligibility. Gross salary is not spendable income: income tax, payroll tax, withholding and benefits are **not calculated**. Roth eligibility is not determined. See [IRS retirement contribution information](https://www.irs.gov/retirement-plans/plan-participant-employee/retirement-topics-contributions) and [Roth IRA eligibility](https://www.irs.gov/retirement-plans/roth-iras).
 
 ## Local development on the Mac
 
-Node 22+ is required. The calculation engine, UI, and snapshot mode require no dependency installation:
+Node 22+ is required. Run `npm ci` once to install dependencies, including the PDF export library. Then start the local preview:
 
 ```sh
 cd /Users/pchrisoc/actual-planning
@@ -43,7 +43,7 @@ To connect from another machine, install dependencies with `npm ci` and configur
 
 ## Safe budget population
 
-**Populate selected values** makes a draft and a preview only. The backend recalculates the plan, validates existing expense category IDs, and retrieves current allocations. Income categories cannot receive retirement/loan cash allocations.
+**Populate selected values** makes a draft and a preview only. Months before the plan start cannot be populated. When the plan begins after the first of a month, existing funded start-month allocations are kept by default, with the remaining-period forecast shown separately. Uncheck **Keep existing allocations in the partial first month** only to intentionally replace that month. This does not alter retirement contribution projections. The backend recalculates the plan, validates existing expense category IDs, and retrieves current allocations. Income categories cannot receive retirement/loan cash allocations.
 
 Write-back is disabled by default and always disabled in local snapshot mode. To enable it after deploying a reviewed source version, set this in the **server's** `.env`:
 
@@ -113,3 +113,7 @@ docker compose --profile bank-sync up -d auto-sync
 `ops/verify.py` checks the original savings/debt API, reads, access configuration and MCP on the deployed VM. `ops/verify-backup.py` verifies a stored ZIP hash/CRC. `ops/verify-bridge.py` checks Bench-to-bridge connectivity. These scripts read credentials only on the server and print no secrets.
 
 Historical deployment details are in DEPLOYMENT.md; community-project choices are in INTEGRATIONS.md.
+
+## Complete reports
+
+Use **Download complete PDF** after populating selected values. The report includes all twelve monthly rows, every contribution date and every selected budget cell, with repeated headers and explicit notes for preserved start-month amounts. The server verifies that the report preview belongs to the current plan. The browser print stylesheet also expands scrolling tables and repeats headers; closed details remain closed.
