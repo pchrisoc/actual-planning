@@ -39,7 +39,7 @@ export async function state(year) {
     }
     const budgetFiles = await api.getBudgets();
     const loaded = budgetFiles.find(b => b.groupId === process.env.ACTUAL_BUDGET_SYNC_ID || b.cloudFileId === process.env.ACTUAL_BUDGET_SYNC_ID || b.id === process.env.ACTUAL_BUDGET_SYNC_ID);
-    return expenseMetadata({budgetName:loaded?.name ?? 'Configured budget (name unresolved)', syncId:process.env.ACTUAL_BUDGET_SYNC_ID, fetchedAt:new Date().toISOString(), freshnessMeaning:'Time this worker downloaded the server budget; not last bank sync.', accounts, categories:await api.getCategories(), groups:await api.getCategoryGroups(), budgets});
+    return expenseMetadata({year,budgetName:loaded?.name ?? 'Configured budget (name unresolved)', syncId:process.env.ACTUAL_BUDGET_SYNC_ID, fetchedAt:new Date().toISOString(), freshnessMeaning:'Time this worker downloaded the server budget; not last bank sync.', accounts, categories:await api.getCategories(), groups:await api.getCategoryGroups(), budgets});
   });
 }
 export async function exportBackup(api) {

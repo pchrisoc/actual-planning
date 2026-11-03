@@ -79,7 +79,7 @@ async function loadActual(){
   try{
     const state=await api(`/api/actual/state?year=${year}`);
     if(request!==actualRequest||year!==Number(form.elements.year.value))return;
-    actual=state;$('connection').textContent=`${actual.budgetName} · ${actual.mode==='snapshot'?'Local snapshot':'Live connection'} · ${year} · Fetched ${new Date(actual.fetchedAt).toLocaleString()}`;renderMappings();
+    actual={...state,year};$('connection').textContent=`${actual.budgetName} · ${actual.mode==='snapshot'?'Local snapshot':'Live connection'} · ${year} · Fetched ${new Date(actual.fetchedAt).toLocaleString()}`;renderMappings();
     const categories=actual.categories.filter(c=>!c.hidden);table($('budget'),['Category',...actual.budgets.map(b=>b.month)],categories.map(c=>[c.name,...actual.budgets.map(b=>{const item=b.budget?.categoryGroups?.flatMap(g=>g.categories).find(x=>x.id===c.id);return item?money(item.budgeted):'Unavailable';})]));
   }catch(e){if(request===actualRequest){actual=null;renderMappings();$('connection').textContent='Could not refresh Actual categories. Retry before populating.';message(e.message,true);}}
   finally{if(request===actualRequest)b.disabled=false;}
