@@ -34,7 +34,7 @@ createServer(async (req, res) => {
     catch { return send(res, 403, {error:'Origin rejected'}); }
   }
   try {
-    if (req.method === 'GET' && ['/','/app.js','/style.css'].includes(url.pathname)) {
+    if (req.method === 'GET' && ['/','/app.js','/overview.mjs','/style.css'].includes(url.pathname)) {
       const file = url.pathname === '/' ? 'index.html' : url.pathname.slice(1);
       res.writeHead(200, {'Content-Type':file.endsWith('html') ? 'text/html' : file.endsWith('js') ? 'text/javascript' : 'text/css', 'Cache-Control':'no-store'});
       return res.end(await readFile(join(publicRoot, file)));

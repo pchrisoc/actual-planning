@@ -42,6 +42,12 @@ To connect from another machine, install dependencies with `npm ci` and configur
 - Loan estimates use monthly APR/12 interest, with first payment on the payoff date's day of the month (clamped when needed). They are not daily-accrual servicer payoff quotes.
 - 401(k) deductions and employer contributions are excluded from category population. Salary may populate an income category; IRA, loans and savings goals can share an expense category; their monthly amounts are summed. Unselected categories remain untouched.
 
+## Combined plan overview
+
+After calculating, a stacked monthly chart combines employee 401(k), Roth IRA, each loan, each named savings goal, and positive existing Actual expense allocations outside mapped plan categories. Gross wage and employer contributions are separate lines; employer money is excluded from wage shares. A finish timeline shows projected completion and requested target dates, including future loan payoffs and goals beyond the planning year. Unreachable goals stay explicitly unreached.
+
+At the bottom, **Where your wage goes** shows amounts and percentages for all planned dates or one selected month. Click a monthly bar or use the period selector to inspect it. Percentages use gross wage scheduled on or after the plan start, not the whole annual salary for a partial-year plan. Annual shares net monthly deficits and surpluses; shortfall warnings preserve timing gaps and overallocated months can exceed 100%. Missing Actual months are marked incomplete. The unassigned portion is before taxes, benefits and any missing costs, never a take-home estimate. This view is a full forecast; partial-first-month protection still applies separately to budget previews. Charts include accessible tables and keyboard month selection.
+
 ## Savings goals
 
 Add multiple goals with any names you choose, such as Emergency Fund, Car or Vacation. New goals start with neutral numbered names. Renaming a goal updates its chart and Populate row while preserving its category mapping. Enter the target, current saved balance, expected APR, contribution amount and weekly, biweekly or monthly frequency. Select an Actual expense category for each goal under **Populate your Actual budget** to include its contributions in the annual budget preview. Current savings is entered manually: category budget allocations are not treated as savings balances.
