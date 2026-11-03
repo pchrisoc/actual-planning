@@ -76,23 +76,23 @@ test('income-group categories are excluded even when category-level income flag 
   assert.equal(f.stats().writes,0);
 });
 test('mid-month plans preserve an existing April allocation instead of clearing an earlier payment',async()=>{
-  const p=example();p.firstPayDate='2027-04-12';p.loans=[{id:'loan',name:'Loan',balanceCents:640547,aprPct:5.5,targetDate:'2029-04-02',monthlyPaymentCents:0}];
+  const p=example();p.firstPayDate='2027-04-15';p.loans=[{id:'loan',name:'Loan',balanceCents:120000,aprPct:0,targetDate:'2028-04-02',monthlyPaymentCents:0}];
   const plan=calculatePlan(p),allocations=buildAllocations(plan,[{source:'loan:loan',categoryId:'c'}],['2027-04','2027-05'],[{id:'c'}]);
   assert.equal(allocations[0].amountCents,0);
-  const f=fake();f.change(28245);
+  const f=fake();f.change(15000);
   const preview=await inspectAllocations(f.api,allocations);
-  assert.equal(preview.cells[0].amountCents,28245);assert.equal(preview.cells[0].forecastAmountCents,0);assert.equal(preview.cells[0].deltaCents,0);assert.equal(preview.cells[0].preserved,true);
-  assert.equal(preview.cells[1].amountCents,28246);assert.equal(preview.cells[1].preserved,false);
+  assert.equal(preview.cells[0].amountCents,15000);assert.equal(preview.cells[0].forecastAmountCents,0);assert.equal(preview.cells[0].deltaCents,0);assert.equal(preview.cells[0].preserved,true);
+  assert.equal(preview.cells[1].amountCents,10000);assert.equal(preview.cells[1].preserved,false);
 });
 test('partial-month protection keeps funded IRA amounts without altering contribution forecasts',async()=>{
-  const p=example();p.firstPayDate='2027-04-12';p.ira.targetDate='2027-10-01';
+  const p=example();p.firstPayDate='2027-04-15';p.ira.targetDate='2027-10-01';
   const plan=calculatePlan(p),allocations=buildAllocations(plan,[{source:'ira',categoryId:'c'}],['2027-04'],[{id:'c'}]);
-  const f=fake();f.change(107033);const preview=await inspectAllocations(f.api,allocations);
-  assert.equal(preview.cells[0].forecastAmountCents,90000);assert.equal(preview.cells[0].amountCents,107033);assert.equal(plan.iraContributionCents,750000);
+  const f=fake();f.change(100000);const preview=await inspectAllocations(f.api,allocations);
+  assert.equal(preview.cells[0].forecastAmountCents,90000);assert.equal(preview.cells[0].amountCents,100000);assert.equal(plan.iraContributionCents,750000);
   f.change(0);const empty=await inspectAllocations(f.api,allocations);assert.equal(empty.cells[0].amountCents,90000);assert.equal(empty.cells[0].preserved,false);
 });
 test('start-month replacement requires opting out; plans beginning on the first retain normal behavior',async()=>{
-  const p=example();p.firstPayDate='2027-04-12';const plan=calculatePlan(p),f=fake();f.change(107033);
+  const p=example();p.firstPayDate='2027-04-15';const plan=calculatePlan(p),f=fake();f.change(100000);
   const optedOut=buildAllocations(plan,[{source:'ira',categoryId:'c'}],['2027-04'],[{id:'c'}],{preserveStartMonth:false});
   assert.equal((await inspectAllocations(f.api,optedOut)).cells[0].amountCents,plan.monthly[3].iraCents);
   p.firstPayDate='2027-04-01';const fromFirst=buildAllocations(calculatePlan(p),[{source:'ira',categoryId:'c'}],['2027-04'],[{id:'c'}]);assert.equal(fromFirst[0].preserveExisting,false);
@@ -104,6 +104,6 @@ test('preserved allocations are not written and a changed preserved value invali
   f.change(101);await assert.rejects(()=>applyAllocations(f.api,preview,{allowOverwrite:false,backup:async()=>({})}),/changed/);
 });
 test('months before the plan start cannot clear historical allocations',()=>{
-  const p=example();p.firstPayDate='2027-04-12';
+  const p=example();p.firstPayDate='2027-04-15';
   assert.throws(()=>buildAllocations(calculatePlan(p),[{source:'ira',categoryId:'c'}],['2027-01'],[{id:'c'}]),/on or after/);
 });
