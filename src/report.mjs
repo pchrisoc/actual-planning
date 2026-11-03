@@ -46,12 +46,27 @@ export async function renderPlanPdf({input,plan,preview=null}) {
   heading('Assumptions and limitations');
   for(const warning of plan.warnings)paragraph(warning,9,'#596755');
   nextPage();heading('Monthly amounts');
-  table(['Month','Gross pay','Employee 401(k)','Employer','Roth IRA','Loans'],plan.monthly.map(r=>[r.month,...['grossCents','k401Cents','employerCents','iraCents','loanPaymentsCents'].map(k=>money(r[k]))]),[66,89,89,89,89,width-422]);
+  table(['Month','Gross pay','Employee 401(k)','Employer','Roth IRA','Loans','Goals'],plan.monthly.map(r=>[r.month,...['grossCents','k401Cents','employerCents','iraCents','loanPaymentsCents','goalContributionsCents'].map(k=>money(r[k]))]),[60,75,75,75,75,75,width-435]);
   if(input.loans.length){
     heading('Loan settings');
     table(['Loan','Balance','APR','Target','Payment override'],input.loans.map(l=>[l.name,money(l.balanceCents),`${l.aprPct}%`,l.targetDate,l.monthlyPaymentCents?money(l.monthlyPaymentCents):'Automatic']),[151,90,50,100,width-391]);
     heading('Loan payoff projections');
     table(['Loan','Monthly payment','Payoff date','Interest to target','Remaining'],plan.loans.map(l=>[l.name,money(l.monthlyPaymentCents),l.payoffDate??'Not paid off',money(l.totalInterestCents),money(l.remainingCents)]),[151,90,100,85,width-426]);
+  }
+  for(const goal of plan.goals??[]){
+    nextPage();heading(`Savings goal: ${goal.name}`);
+    table(['Setting','Value'],[['Target / current savings',`${money(goal.targetCents)} / ${money(goal.balanceCents)}`],['Contribution / frequency',`${money(goal.contributionCents)} / ${goal.frequency}`],['APR / Actual category',`${goal.aprPct}% / ${goal.categoryName||(goal.categoryId?'Selected category':'Forecast only')}`],['Projected goal reached',goal.reachedDate??'Not reached within 50 years'],['Total deposits / forecast interest',`${money(goal.totalContributionsCents)} / ${money(goal.interestCents)}`]],[width*.5,width*.5]);
+    paragraph(goal.assumption,9);
+    if(y+210>bottom())nextPage();
+    const top=y,left=100,chartWidth=width-65,chartHeight=140,start=Date.parse(goal.startDate),end=Math.max(start+86400000,Date.parse(goal.rows.at(-1).date)),max=Math.max(goal.targetCents,...goal.rows.map(r=>r.balanceCents),1);
+    const x=d=>left+(Date.parse(d)-start)/(end-start)*chartWidth,gy=v=>top+chartHeight-v/max*chartHeight;
+    for(let i=0;i<=4;i++){const v=max*i/4;doc.moveTo(left,gy(v)).lineTo(left+chartWidth,gy(v)).lineWidth(.4).strokeColor('#dce4da').stroke();doc.font('Helvetica').fontSize(8).fillColor('#53786b').text(money(v),42,gy(v)-4,{width:52,align:'right'});}
+    doc.moveTo(left,gy(goal.targetCents)).lineTo(left+chartWidth,gy(goal.targetCents)).dash(4,{space:3}).strokeColor('#9a7131').stroke().undash();
+    for(const [color,value]of [['#8caa98',r=>goal.balanceCents+r.totalContributionsCents],['#205d4b',r=>r.balanceCents]]){goal.rows.forEach((r,i)=>{if(i===0)doc.moveTo(x(r.date),gy(value(r)));else doc.lineTo(x(r.date),gy(value(r)));});doc.lineWidth(1.5).strokeColor(color).stroke();}
+    doc.font('Helvetica').fontSize(8).fillColor('#53786b').text(goal.startDate,left,top+chartHeight+8).text(goal.rows.at(-1).date,left+chartWidth-80,top+chartHeight+8,{width:80,align:'right'});y=top+chartHeight+30;
+    paragraph('Dark green: forecast balance. Light green: starting savings plus contributions. Dashed gold: target.',8);
+    const years=new Map();for(const r of goal.rows){const year=r.date.slice(0,4),entry=years.get(year)??{contributions:0,final:r};entry.contributions+=r.contributionCents;entry.final=r;years.set(year,entry);}
+    table(['Year','Contributions','Cumulative interest','Forecast balance'],[...years].map(([year,r])=>[year,money(r.contributions),money(r.final.interestCents),money(r.final.balanceCents)]),[70,140,150,width-360]);
   }
   nextPage();heading('Contribution dates and running totals');
   table(['Date','Gross pay','401(k)','401(k) YTD','Employer','Roth IRA','IRA YTD'],plan.rows.map(r=>[r.date,...['grossCents','k401Cents','k401YtdCents','employerCents','iraCents','iraYtdCents'].map(k=>money(r[k]))]),[64,75,72,75,75,75,width-436]);

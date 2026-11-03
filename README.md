@@ -40,11 +40,19 @@ To connect from another machine, install dependencies with `npm ci` and configur
 - Employer money does not reduce the employee deferral limit or appear in the cash budget. Percentage matching stops when employee contributions stop. True-ups, bonuses, vesting, catch-ups, legal combined employer/employee limits and payroll restrictions are not modeled.
 - IRA YTD must include both Roth and traditional IRA contributions across accounts. All projections use the selected calendar year; prior-year IRA contributions made in a following year are not modeled.
 - Loan estimates use monthly APR/12 interest, with first payment on the payoff date's day of the month (clamped when needed). They are not daily-accrual servicer payoff quotes.
-- 401(k) deductions and employer contributions are excluded from category population. IRA and loans can share a category; their monthly amounts are summed. Unselected categories remain untouched.
+- 401(k) deductions and employer contributions are excluded from category population. IRA, loans and savings goals can share a category; their monthly amounts are summed. Unselected categories remain untouched.
+
+## Savings goals
+
+Add multiple named goals (for example, House Savings). Enter the target, current saved balance, expected APR, contribution amount and weekly, biweekly or monthly frequency. Select an Actual expense category on the goal card to include its contributions in the annual budget preview. Current savings is entered manually: category budget allocations are not treated as savings balances.
+
+Forecasts begin on the plan start date, accrue daily at APR/365 and deposit on the selected schedule. Monthly dates clamp at month-end without drifting. Deposits stop when the target is reached and the last deposit is capped at the remaining amount. Charts separate the forecast balance from starting savings plus deposits and mark the target. Dates and balances are available in a table; the PDF includes the chart and annual summaries. Unreached targets are reported explicitly after a 50-year horizon. Interest, fees, withdrawals and tax treatment are not actual transactions; only scheduled deposits for the planning year enter the preview. Goals and category selections persist with saved plans; older plans continue to load.
 
 ## Safe budget population
 
 **Populate selected values** makes a draft and a preview only. Months before the plan start cannot be populated. When the plan begins after the first of a month, existing funded start-month allocations are kept by default, with the remaining-period forecast shown separately. Uncheck **Keep existing allocations in the partial first month** only to intentionally replace that month. This does not alter retirement contribution projections. The backend recalculates the plan, validates existing expense category IDs, and retrieves current allocations. Income categories cannot receive retirement/loan cash allocations.
+
+The interface shows whether direct apply is on, and lists every apply blocker above the disabled button, including unreadable months and required confirmations. Confirmations unlock only when write-back is enabled and all selected months are readable.
 
 Write-back is disabled by default and always disabled in local snapshot mode. To enable it after deploying a reviewed source version, set this in the **server's** `.env`:
 

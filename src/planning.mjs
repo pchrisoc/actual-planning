@@ -1,3 +1,4 @@
+import {forecastGoal} from './goals.mjs';
 const DAY = 86400000;
 const fail = message => { throw new Error(message); };
 function amount(value, label) {
@@ -104,8 +105,13 @@ export function calculatePlan(input) {
     if(balance>0)warnings.push(`${loan.name}: ${balance/100} remains at the selected payoff date.`);
     return {id:loan.id,name:loan.name,monthlyPaymentCents:payment,totalInterestCents,remainingCents:balance,payoffDate:balance===0?payments.at(-1)?.date??input.firstPayDate:null,payments};
   });
-  if(monthly.some(m=>m.iraCents+m.loanPaymentsCents>m.grossCents-m.k401Cents))warnings.push('Some months require more IRA and loan funding than gross pay after 401(k). Review targets before budgeting; taxes and living costs are still additional.');
-  return {version:2,year,startDate:input.firstPayDate,rows,monthly,loans,warnings,annualPayPeriods:calendar.length,k401RequiredPerPeriodCents:Math.max(0,...kParts),iraRequiredPerPeriodCents:Math.max(0,...iraParts),k401FinishDate:rows.find(r=>r.k401YtdCents>=kLimit)?.date??null,iraFinishDate:rows.find(r=>r.iraYtdCents>=iraLimit)?.date??null,employee401kCents:kTotal-kYtd,iraContributionCents:iraTotal-iraYtd,employerContributionCents:employerTotal};
+  if(!Array.isArray(input.goals??[])||(input.goals??[]).length>30)fail('Provide at most 30 goals');
+  const goalIds=new Set();
+  const goals=(input.goals??[]).map(g=>{if(goalIds.has(g.id))fail('Every goal needs a unique ID');goalIds.add(g.id);return forecastGoal(g,input.firstPayDate);});
+  for(const m of monthly){m.goals={};m.goalContributionsCents=0;}
+  for(const g of goals)for(const r of g.rows){if(r.date.startsWith(`${year}-`)){const m=monthly[Number(r.date.slice(5,7))-1];m.goals[g.id]=(m.goals[g.id]??0)+r.contributionCents;m.goalContributionsCents+=r.contributionCents;}}
+  if(monthly.some(m=>m.iraCents+m.loanPaymentsCents+m.goalContributionsCents>m.grossCents-m.k401Cents))warnings.push('Some months require more IRA, loan and savings goal funding than gross pay after 401(k). Review targets before budgeting; taxes and living costs are still additional.');
+  return {version:2,year,startDate:input.firstPayDate,rows,monthly,loans,goals,warnings,annualPayPeriods:calendar.length,k401RequiredPerPeriodCents:Math.max(0,...kParts),iraRequiredPerPeriodCents:Math.max(0,...iraParts),k401FinishDate:rows.find(r=>r.k401YtdCents>=kLimit)?.date??null,iraFinishDate:rows.find(r=>r.iraYtdCents>=iraLimit)?.date??null,employee401kCents:kTotal-kYtd,iraContributionCents:iraTotal-iraYtd,employerContributionCents:employerTotal};
 }
 export function buildAllocations(plan, mappings, months, categories, {preserveStartMonth=true}={}) {
   if(!Array.isArray(mappings)||!Array.isArray(months)||!months.length)fail('Select categories and at least one month');
@@ -114,11 +120,11 @@ export function buildAllocations(plan, mappings, months, categories, {preserveSt
   if(selected.some(m=>!plan.monthly.some(r=>r.month===m)))fail('Invalid selected month');
   if(plan.startDate&&selected.some(m=>m<plan.startDate.slice(0,7)))fail('Select months on or after the plan start month');
   const used=new Set(), result=new Map();
-  for(const mapping of mappings){
+  for(const mapping of [...mappings,...(plan.goals??[]).filter(g=>g.categoryId).map(g=>({source:`goal:${g.id}`,categoryId:g.categoryId}))]){
     if(!valid.has(mapping.categoryId))fail('Select an existing expense category');
     if(used.has(mapping.source))fail('Each planning source can be mapped only once');used.add(mapping.source);
-    if(mapping.source!=='ira'&&!plan.loans.some(l=>`loan:${l.id}`===mapping.source))fail('Only IRA and loan payments can populate cash budget allocations');
-    for(const month of selected){const row=plan.monthly.find(r=>r.month===month);const value=mapping.source==='ira'?row.iraCents:row.loans[mapping.source.slice(5)]??0;const key=`${month}/${mapping.categoryId}`;const cell=result.get(key)??{month,categoryId:mapping.categoryId,amountCents:0,preserveExisting:preserveStartMonth&&!!plan.startDate&&plan.startDate.slice(8)!=='01'&&month===plan.startDate.slice(0,7)};cell.amountCents+=value;result.set(key,cell);}
+    if(mapping.source!=='ira'&&!plan.loans.some(l=>`loan:${l.id}`===mapping.source)&&!(plan.goals??[]).some(g=>`goal:${g.id}`===mapping.source))fail('Only IRA, loan and savings goal contributions can populate cash budget allocations');
+    for(const month of selected){const row=plan.monthly.find(r=>r.month===month);const value=mapping.source==='ira'?row.iraCents:mapping.source.startsWith('goal:')?row.goals[mapping.source.slice(5)]??0:row.loans[mapping.source.slice(5)]??0;const key=`${month}/${mapping.categoryId}`;const cell=result.get(key)??{month,categoryId:mapping.categoryId,amountCents:0,preserveExisting:preserveStartMonth&&!!plan.startDate&&plan.startDate.slice(8)!=='01'&&month===plan.startDate.slice(0,7)};cell.amountCents+=value;result.set(key,cell);}
   }
   if(!result.size)fail('Choose at least one category mapping');
   return [...result.values()];
