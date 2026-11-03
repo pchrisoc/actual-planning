@@ -1,0 +1,8 @@
+{
+  "name": "actual-planning-companion",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {"start": "node src/server.mjs", "dev": "DATA_DIR=./data HOST=127.0.0.1 PORT=3016 node --env-file-if-exists=.env.local src/server.mjs", "test": "node --test"},
+  "dependencies": {"@actual-app/api": "26.11.0"}
+}

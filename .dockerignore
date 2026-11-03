@@ -1,0 +1,8 @@
+.env
+.env.*
+secrets
+data
+node_modules
+vendor
+actual_budget_financial_planner_handoff.md
+*.tgz

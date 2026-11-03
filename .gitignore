@@ -1,0 +1,11 @@
+.env
+.env.*
+!.env.example
+secrets/
+data/
+node_modules/
+vendor/
+*.tgz
+*.tar.gz
+actual_budget_financial_planner_handoff.md
+DEPLOYMENT.md

@@ -1,0 +1,113 @@
+name: actual-planning
+services:
+  planner:
+    build: .
+    image: actual-planning-companion:0.1.0
+    restart: unless-stopped
+    init: true
+    user: "1000:1000"
+    ports: ["${BIND_ADDRESS:-127.0.0.1}:${PLANNER_PORT:-3016}:3000"]
+    environment:
+      ACTUAL_SERVER_URL: ${ACTUAL_SERVER_URL}
+      ACTUAL_BUDGET_SYNC_ID: ${ACTUAL_BUDGET_SYNC_ID}
+      ACTUAL_PASSWORD_FILE: /run/secrets/actual_password
+      ACTUAL_WRITE_ENABLED: ${ACTUAL_WRITE_ENABLED:-false}
+    secrets: [actual_password]
+    volumes: [planner-data:/data]
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    healthcheck:
+      test: [CMD, node, -e, "fetch('http://127.0.0.1:3000/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+  bench:
+    image: ${BENCH_IMAGE:-xrous/actual-bench:latest}
+    environment:
+      ACTUAL_BENCH_AUTH: none
+    restart: unless-stopped
+    ports: ["127.0.0.1:3019:3000"]
+    volumes: [bench-data:/data]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+  bridge:
+    image: ${BRIDGE_IMAGE:-jhonderson/actual-http-api:26.10.0}
+    user: "1000:1000"
+    restart: unless-stopped
+    init: true
+    environment:
+      ACTUAL_SERVER_URL: ${ACTUAL_SERVER_URL}
+      ACTUAL_SERVER_PASSWORD_PATH: /run/secrets/actual_password
+      API_KEY_PATH: /run/secrets/bridge_api_key
+      ACTUAL_DATA_DIR: /data
+      EXPERIMENTAL_OPERATIONS_ENABLED: "false"
+      NODE_ENV: production
+    secrets: [actual_password, bridge_api_key]
+    volumes: [bridge-data:/data]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+  gateway:
+    image: nginx:1.28-alpine
+    user: "101:101"
+    restart: unless-stopped
+    ports: ["${BIND_ADDRESS:-127.0.0.1}:${BENCH_PORT:-3017}:8080"]
+    depends_on: [bench]
+    read_only: true
+    tmpfs: [/tmp, "/var/cache/nginx:uid=101,gid=101,mode=0700", "/var/run:uid=101,gid=101,mode=0700"]
+    volumes:
+      - ./ops/bench-nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+  mcp:
+    image: ${MCP_IMAGE:-sstefanov/actual-mcp:latest}
+    restart: unless-stopped
+    init: true
+    user: "1000:1000"
+    ports: ["${BIND_ADDRESS:-127.0.0.1}:${MCP_PORT:-3018}:3000"]
+    entrypoint: [node, /opt/secret-entrypoint.cjs]
+    command: [--sse, --enable-bearer]
+    working_dir: /app
+    environment:
+      ACTUAL_SERVER_URL: ${ACTUAL_SERVER_URL}
+      ACTUAL_BUDGET_SYNC_ID: ${ACTUAL_BUDGET_SYNC_ID}
+      ACTUAL_DATA_DIR: /data
+      ACTUAL_SYNC_TTL_MS: "60000"
+    secrets: [actual_password, mcp_token]
+    volumes:
+      - mcp-data:/data
+      - ./ops/mcp-entrypoint.cjs:/opt/secret-entrypoint.cjs:ro
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+  auto-sync:
+    profiles: [bank-sync]
+    image: ${AUTO_SYNC_IMAGE:-seriouslag/actual-auto-sync:latest}
+    restart: unless-stopped
+    environment:
+      ACTUAL_SERVER_URL: ${ACTUAL_SERVER_URL}
+      ACTUAL_SERVER_PASSWORD_FILE: /run/secrets/actual_password
+      ACTUAL_BUDGET_SYNC_IDS: ${ACTUAL_BUDGET_SYNC_ID}
+      ACTUAL_DATA_DIR: /data
+      CRON_SCHEDULE: "0 5 * * *"
+      TIMEZONE: America/Los_Angeles
+      RUN_ON_START: "false"
+      NOTIFY_ON_SUCCESS: "false"
+      LOG_LEVEL: warn
+    secrets: [actual_password]
+    volumes: [sync-data:/data]
+volumes:
+  planner-data:
+  bench-data:
+  mcp-data:
+  sync-data:
+  bridge-data:
+secrets:
+  actual_password:
+    file: ${ACTUAL_PASSWORD_PATH}
+  mcp_token:
+    file: ./secrets/mcp_token
+  bridge_api_key:
+    file: ./secrets/bridge_api_key
