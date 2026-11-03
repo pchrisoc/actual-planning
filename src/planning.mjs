@@ -72,8 +72,8 @@ export function calculatePlan(input) {
   if(employer.mode==='match'&&employerRate>0&&k.targetDate<`${year}-12-31`)warnings.push('Matching is calculated per contribution date and stops when employee deferrals stop. A year-end employer true-up is not modeled.');
   warnings.push('Gross salary is not take-home pay. Taxes, withholding, benefits and payroll election restrictions are not calculated.');
   warnings.push('Retirement limits are editable planning assumptions. Confirm tax-year limits, Roth income eligibility, and all IRA contributions across accounts.');
-  const monthly=Array.from({length:12},(_,i)=>({month:`${year}-${String(i+1).padStart(2,'0')}`,grossCents:0,k401Cents:0,iraCents:0,employerCents:0,loanPaymentsCents:0,loans:{}}));
-  for(const p of rows){const m=monthly[Number(p.date.slice(5,7))-1];for(const key of ['grossCents','k401Cents','iraCents','employerCents'])m[key]+=p[key];}
+  const monthly=Array.from({length:12},(_,i)=>({month:`${year}-${String(i+1).padStart(2,'0')}`,grossCents:0,grossAfterDeferralCents:0,k401Cents:0,iraCents:0,employerCents:0,loanPaymentsCents:0,loans:{}}));
+  for(const p of rows){const m=monthly[Number(p.date.slice(5,7))-1];for(const key of ['grossCents','grossAfterDeferralCents','k401Cents','iraCents','employerCents'])m[key]+=p[key];}
   if(!Array.isArray(input.loans)||input.loans.length>30)fail('Provide at most 30 loans');
   const ids=new Set();
   const loans=input.loans.map(loan=>{
@@ -125,7 +125,7 @@ export function buildAllocations(plan, mappings, months, categories, {preserveSt
     if(!category||!!category.is_income!==isIncome)fail(isIncome?'Select an existing income category for salary':'Select an existing expense category for contributions and loans');
     if(used.has(mapping.source))fail('Each planning source can be mapped only once');used.add(mapping.source);
     if(mapping.source!=='income'&&mapping.source!=='ira'&&!plan.loans.some(l=>`loan:${l.id}`===mapping.source)&&!(plan.goals??[]).some(g=>`goal:${g.id}`===mapping.source))fail('Only salary income, IRA, loan and savings goal contributions can populate budget allocations');
-    for(const month of selected){const row=plan.monthly.find(r=>r.month===month);const value=isIncome?row.grossCents:mapping.source==='ira'?row.iraCents:mapping.source.startsWith('goal:')?row.goals[mapping.source.slice(5)]??0:row.loans[mapping.source.slice(5)]??0;const key=`${month}/${mapping.categoryId}`;const cell=result.get(key)??{month,categoryId:mapping.categoryId,kind:isIncome?'income':'expense',amountCents:0,preserveExisting:preserveStartMonth&&!!plan.startDate&&plan.startDate.slice(8)!=='01'&&month===plan.startDate.slice(0,7)};cell.amountCents+=value;result.set(key,cell);}
+    for(const month of selected){const row=plan.monthly.find(r=>r.month===month);const value=isIncome?row.grossAfterDeferralCents:mapping.source==='ira'?row.iraCents:mapping.source.startsWith('goal:')?row.goals[mapping.source.slice(5)]??0:row.loans[mapping.source.slice(5)]??0;const key=`${month}/${mapping.categoryId}`;const cell=result.get(key)??{month,categoryId:mapping.categoryId,kind:isIncome?'income':'expense',amountCents:0,preserveExisting:preserveStartMonth&&!!plan.startDate&&plan.startDate.slice(8)!=='01'&&month===plan.startDate.slice(0,7)};cell.amountCents+=value;result.set(key,cell);}
   }
   if(!result.size)fail('Choose at least one category mapping');
   return [...result.values()];

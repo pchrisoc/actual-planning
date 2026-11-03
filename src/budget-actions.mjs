@@ -19,7 +19,7 @@ export async function inspectAllocations(api, allocations) {
     const forecastAmountCents=cell.forecastAmountCents??cell.amountCents;
     const preserved=cell.preserveExisting===true&&beforeCents!==null&&beforeCents>0;
     const amountCents=preserved?beforeCents:forecastAmountCents;
-    cells.push({...cell,amountCents,forecastAmountCents,preserved,note:preserved?'Existing allocation kept: the plan starts partway through this month.':'',kind,categoryName:kind==='income'?`Gross income / ${categoryMetadata.name}`:categoryMetadata.name,beforeCents,deltaCents:beforeCents===null?null:amountCents-beforeCents,status:beforeCents===null?'unavailable':'read'});
+    cells.push({...cell,amountCents,forecastAmountCents,preserved,note:preserved?'Existing allocation kept: the plan starts partway through this month.':'',kind,categoryName:kind==='income'?`Income after 401(k) / ${categoryMetadata.name}`:categoryMetadata.name,beforeCents,deltaCents:beforeCents===null?null:amountCents-beforeCents,status:beforeCents===null?'unavailable':'read'});
   }
   return {cells,canApply:cells.every(c=>c.status==='read'),needsOverwrite:cells.some(c=>c.beforeCents!==0&&c.deltaCents!==0)};
 }
