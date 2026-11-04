@@ -54,3 +54,38 @@ test('tax and loan assumptions reject invalid values',()=>{
  p.tax={mode:'single'};p.loans=[loan({refinanceDate:'2028-01-01'})];assert.throws(()=>calculatePlan(p),/Enter an APR/);
  p.loans=[loan({autopayEndDate:'2028-02-31'})];assert.throws(()=>calculatePlan(p),/autopay/);
 });
+
+test('100% 401(k) holds every other payment through the max-out payday',()=>{
+ const p=input();
+ p.k401={...p.k401,mode:'percent',paycheckPct:100};
+ p.ira={limitCents:750000,ytdCents:0,startDate:'2027-03-01',targetDate:'2027-12-31',mode:'amount',perPayCents:100000};
+ p.hsa={limitCents:450000,ytdCents:0,employerCents:50000,targetDate:'2027-12-31',mode:'amount',perPayCents:100000};
+ p.loans=[loan({targetDate:'2027-12-01'})];
+ p.goals=[{id:'savings',name:'Savings',categoryId:'',targetCents:100000,balanceCents:0,aprPct:0,frequency:'monthly',contributionPct:2}];
+ const plan=calculatePlan(p);
+ assert.equal(plan.k401FinishDate,'2027-04-01');
+ assert.equal(plan.otherPaymentsResumeAfter,'2027-04-01');
+ assert.ok(plan.rows.slice(0,4).every(r=>r.iraCents===0&&r.hsaCents===0));
+ assert.equal(plan.rows[4].iraCents,100000);
+ assert.equal(plan.hsaContributionCents,400000);
+ assert.equal(plan.tax.magiCents,4960000);
+ assert.equal(plan.loans[0].payments[0].date,'2027-05-01');
+ assert.equal(plan.goals[0].rows.find(r=>r.contributionCents>0).date,'2027-05-01');
+ assert.ok(plan.warnings.some(w=>w.includes('estimated taxes due')));
+ p.ira.startDate='2027-08-01';
+ assert.equal(calculatePlan(p).rows.find(r=>r.iraCents>0).date,'2027-08-01');
+ p.k401.targetDate='2027-03-01';
+ const blocked=calculatePlan(p);
+ assert.equal(blocked.otherPaymentsBlocked,true);
+ assert.equal(blocked.iraContributionCents,0);
+ assert.equal(blocked.loans[0].payments.length,0);
+});
+
+test('a 100% loan payment gets priority and then releases other contributions',()=>{
+ const p=input();
+ p.loans=[loan({balanceCents:1000000,paymentPct:100,targetDate:'2027-12-01'})];
+ const plan=calculatePlan(p);
+ assert.equal(plan.loans[0].payoffDate,'2027-02-01');
+ assert.equal(plan.otherPaymentsResumeAfter,'2027-02-01');
+ assert.equal(plan.rows.find(r=>r.k401Cents>0).date,'2027-03-01');
+});
