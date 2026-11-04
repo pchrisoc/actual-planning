@@ -89,3 +89,13 @@ test('a 100% loan payment gets priority and then releases other contributions',(
  assert.equal(plan.otherPaymentsResumeAfter,'2027-02-01');
  assert.equal(plan.rows.find(r=>r.k401Cents>0).date,'2027-03-01');
 });
+
+test('negative take-home remains a forecast shortfall and exports zero budget income',()=>{
+ const p=input();
+ p.k401={...p.k401,mode:'percent',paycheckPct:100};
+ const plan=calculatePlan(p);
+ assert.ok(plan.monthly[0].netPayCents<0);
+ const categories=[{id:'income',is_income:true}];
+ const cells=buildAllocations(plan,[{source:'income',categoryId:'income'}],['2027-01'],categories);
+ assert.equal(cells[0].amountCents,0);
+});

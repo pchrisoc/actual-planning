@@ -74,7 +74,12 @@ export function renderOverview(plan,input,actual){
     const total=sum(split.parts.map(p=>p.amountCents)),max=Math.max(split.netPayCents,total,1),bar=svgRoot(960,88,'Percentage allocation of post-tax pay');bar.classList.add('wage-percentage-bar');let x=0;
     for(const part of split.parts){const width=part.amountCents/max*920;if(!width)continue;const rect=svgNode('rect',{x:20+x,y:12,width,height:36,fill:part.color,tabindex:0,role:'img','aria-label':`${part.label}: ${money(part.amountCents)}, ${part.percent===null?'no take-home pay':part.percent.toFixed(1)+'% of post-tax pay'}`});title(rect,rect.getAttribute('aria-label'));bar.append(rect);x+=width;}
     const boundary=20+split.netPayCents/max*920;bar.append(svgNode('line',{x1:boundary,x2:boundary,y1:7,y2:55,stroke:'#183834','stroke-width':2}),svgNode('text',{x:Math.min(920,Math.max(40,boundary)),y:75,'text-anchor':'end','font-size':13,fill:'#183834'},split.netPayCents?'100% of post-tax pay':'No take-home pay'));holder.append(bar);
-    if(split.shortfallCents)holder.append(el('p',`Post-tax budget overallocated by ${money(split.shortfallCents)} (${split.netPayCents?(split.shortfallCents/split.netPayCents*100).toFixed(1)+'% of post-tax pay':'no take-home pay'}). The bar extends beyond the 100% marker.`,'overview-shortfall'));
+    if(split.shortfallCents){
+      const detail=split.netPayCents>0
+        ? `(${(split.shortfallCents/split.netPayCents*100).toFixed(1)}% of post-tax pay).`
+        : 'There is no positive take-home pay for this period.';
+      holder.append(el('p',`Cash shortfall of ${money(split.shortfallCents)}. ${detail}`,'overview-shortfall'));
+    }
     if(month==='all'&&split.monthlyShortfallCents)holder.append(el('p',`Individual months have ${money(split.monthlyShortfallCents)} of post-tax shortfalls. Annual totals can mask these timing gaps.`,'overview-shortfall'));
     const breakdown=el('div',undefined,'wage-breakdown');
     for(const part of split.parts){const row=el('div',undefined,'wage-part');row.append(legendPart(part.color,part.label),el('strong',part.percent===null?'—':`${part.percent.toFixed(1)}%`),el('span',money(part.amountCents)));breakdown.append(row);}holder.append(breakdown);
