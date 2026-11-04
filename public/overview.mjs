@@ -1,4 +1,4 @@
-const palette=['#286b58','#6677bc','#b26c4c','#af8e38','#3886a0','#9365a4','#658745','#b65374','#4c7890','#a77b58'];
+const palette=['#286b58','#c35e24','#167d81','#a77c08','#8a4f9b','#57782c','#ba4268','#31749a','#94522f','#596178'];
 const amount=v=>Number.isSafeInteger(v)?v:0;
 const sum=values=>values.reduce((a,b)=>a+b,0);
 const money=c=>new Intl.NumberFormat('en-US',{style:'currency',currency:'USD'}).format(c/100);
@@ -6,7 +6,7 @@ export function buildOverview(plan,input,actual=null){
   const months=plan.monthly.filter(m=>m.month>=plan.startDate.slice(0,7));
   const series=[];
   const add=(key,label,values,color)=>series.push({key,label,values,color:color||palette[series.length%palette.length]});
-  add('ira','Roth IRA',months.map(m=>m.iraCents),'#6677bc');
+  add('ira','Roth IRA',months.map(m=>m.iraCents),'#4e5db2');
   for(const loan of plan.loans)add(`loan:${loan.id}`,loan.name,months.map(m=>amount(m.loans?.[loan.id])));
   for(const goal of plan.goals??[])add(`goal:${goal.id}`,goal.name,months.map(m=>amount(m.goals?.[goal.id])));
   const mapped=new Set((input.mappings??[]).filter(m=>m.source!=='income').map(m=>m.categoryId));
@@ -73,7 +73,7 @@ export function renderOverview(plan,input,actual){
     if(!split.netPayCents)holder.append(el('p','No post-tax pay is scheduled in this selection. Percentages are unavailable.','note'));
     if(split.incomplete)holder.append(el('p',overview.unmappedSources.length?'Incomplete: map the active plan sources to Actual categories to include existing expenses without double-counting. Unassigned amounts must still cover those costs.':'Incomplete: some Actual allocations could not be read. Unassigned amounts still need to cover missing costs.','note'));
     const total=sum(split.parts.map(p=>p.amountCents)),max=Math.max(split.netPayCents,total,1),bar=svgRoot(960,88,'Percentage allocation of post-tax pay');bar.classList.add('wage-percentage-bar');let x=0;
-    for(const part of split.parts){const width=part.amountCents/max*920;if(!width)continue;const rect=svgNode('rect',{x:20+x,y:12,width,height:36,fill:part.color,tabindex:0,role:'img','aria-label':`${part.label}: ${money(part.amountCents)}, ${part.percent===null?'no take-home pay':part.percent.toFixed(1)+'% of post-tax pay'}`});title(rect,rect.getAttribute('aria-label'));bar.append(rect);x+=width;}
+    for(const part of split.parts){const width=part.amountCents/max*920;if(!width)continue;const rect=svgNode('rect',{x:20+x,y:12,width,height:36,fill:part.color,stroke:"#fff","stroke-width":0.75,tabindex:0,role:'img','aria-label':`${part.label}: ${money(part.amountCents)}, ${part.percent===null?'no take-home pay':part.percent.toFixed(1)+'% of post-tax pay'}`});title(rect,rect.getAttribute('aria-label'));bar.append(rect);x+=width;}
     const boundary=20+split.netPayCents/max*920;bar.append(svgNode('line',{x1:boundary,x2:boundary,y1:7,y2:55,stroke:'#183834','stroke-width':2}),svgNode('text',{x:Math.min(920,Math.max(40,boundary)),y:75,'text-anchor':'end','font-size':13,fill:'#183834'},split.netPayCents?'100% of post-tax pay':'No take-home pay'));holder.append(bar);
     if(split.shortfallCents){
       const detail=split.netPayCents>0
@@ -96,7 +96,7 @@ export function renderOverview(plan,input,actual){
   const step=plot.width/overview.rows.length,grossPoints=[],netPoints=[],taxPoints=[],employerPoints=[];
   overview.rows.forEach((row,i)=>{
     const x=plot.left+i*step+step*.18,width=step*.64,g=svgNode('g',{tabindex:0,role:'button','aria-label':`${row.month}: gross ${money(row.grossCents)}, estimated tax ${money(row.taxCents)}, post-tax pay ${money(row.netPayCents)}, planned ${money(row.committedCents)}, unassigned ${money(row.remainingCents)}. Select wage breakdown.`});
-    let accumulated=0;for(const s of overview.series){const v=s.values[i];if(v){g.append(svgNode('rect',{x,y:y(accumulated+v),width,height:v/max*plot.height,fill:s.color}));accumulated+=v;}}
+    let accumulated=0;for(const s of overview.series){const v=s.values[i];if(v){g.append(svgNode('rect',{x,y:y(accumulated+v),width,height:v/max*plot.height,fill:s.color,stroke:"#fff","stroke-width":0.75}));accumulated+=v;}}
     const choose=()=>{selected.value=row.month;redrawSplit();};g.addEventListener('click',choose);g.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();choose();}});
     title(g,`${row.month}\nGross wage: ${money(row.grossCents)}\nEstimated tax: ${money(row.taxCents)}\nEmployee 401(k): ${money(row.k401Cents)}\nPayroll HSA: ${money(row.hsaCents)}\nPost-tax pay: ${money(row.netPayCents)}\n${overview.series.map(s=>`${s.label}: ${money(s.values[i])}`).join('\n')}\nEmployer extra: ${money(row.employerCents)}${row.actualAvailable?'':'\nActual allocations incomplete'}`);monthly.append(g);
     const cx=x+width/2;grossPoints.push([cx,y(row.grossCents)]);netPoints.push([cx,y(row.netPayCents)]);taxPoints.push([cx,y(row.taxCents)]);employerPoints.push([cx,y(row.employerCents)]);monthly.append(svgNode('text',{x:cx,y:316,'text-anchor':'middle','font-size':12,fill:'#53786b'},new Date(row.month+'-01T00:00:00Z').toLocaleString('en-US',{month:'short',timeZone:'UTC'})+(row.actualAvailable?'':'*')));
