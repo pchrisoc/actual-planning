@@ -43,6 +43,10 @@ export async function renderPlanPdf({input,plan,preview=null}) {
     ['Combined IRA limit / prior YTD',`${money(input.ira.limitCents)} / ${money(input.ira.ytdCents)}`],['Roth IRA target / projected completion',`${input.ira.targetDate} / ${plan.iraFinishDate??'Not reached'}`],['Roth IRA contribution per date (up to)',money(plan.iraRequiredPerPeriodCents)],
     ['Employer method',input.employer.mode==='match'?'Match employee contributions':'Percentage of gross salary'],['Employer rate / eligible salary percentage',`${input.employer.ratePct}% / ${input.employer.mode==='match'?input.employer.matchSalaryCapPct+'%':'Not applicable'}`],['Employer annual cap / prior YTD',`${input.employer.annualCapCents===null?'No dollar cap':money(input.employer.annualCapCents)} / ${money(input.employer.ytdCents)}`],['Projected employer contribution',money(plan.employerContributionCents)]
   ],[width*.55,width*.45]);
+  if(plan.smartAllocation){
+    const smart=plan.smartAllocation;
+    paragraph(`Smart allocations: ${smart.percent}% of available cash. Monthly required bills ${money(smart.monthlyBillsCents)}, monthly cash buffer ${money(smart.monthlyBufferCents)}, and required bills and loan shortfalls ${money(plan.requiredShortfallCents)}.`,9);
+  }
   if(input.hsa){
     table(['HSA setting','Value'],[
       ['Annual limit',money(input.hsa.limitCents)],
@@ -52,7 +56,7 @@ export async function renderPlanPdf({input,plan,preview=null}) {
     ],[width*.55,width*.45]);
   }
   if(input.ira.startDate)paragraph(`Roth IRA earliest contribution date: ${input.ira.startDate}`,9);
-  if(plan.otherPaymentsResumeAfter)paragraph(`Other payments resume after ${plan.otherPaymentsResumeAfter}.`,9);
+  if(plan.otherPaymentsResumeAfter)paragraph(`Optional payments eligible ${plan.smartAllocation?'from':'after'} ${plan.otherPaymentsResumeAfter}.`,9);
   if(plan.otherPaymentsBlocked)paragraph('Other payments are held because the priority target was not reached.',9);
   if(plan.tax){
     heading('Federal tax and student loan interest');

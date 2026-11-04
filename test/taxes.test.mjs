@@ -99,3 +99,27 @@ test('negative take-home remains a forecast shortfall and exports zero budget in
  const cells=buildAllocations(plan,[{source:'income',categoryId:'income'}],['2027-01'],categories);
  assert.equal(cells[0].amountCents,0);
 });
+
+test('smart front-loading keeps loans current and funds eligible goals on the max-out payday',()=>{
+ const p=input();
+ p.k401={...p.k401,mode:'percent',paycheckPct:100};
+ p.ira={limitCents:750000,ytdCents:0,startDate:'2027-06-01',targetDate:'2027-12-31'};
+ p.smartAllocation={percent:80,monthlyBillsCents:100000,monthlyBufferCents:50000,payrollDeductionsCents:10000};
+ p.loans=[loan({monthlyPaymentCents:25000})];
+ p.goals=[
+   {id:'small',name:'Small goal',categoryId:'',targetCents:10000,balanceCents:0,contributionCents:0,aprPct:0,frequency:'monthly',priority:2},
+   {id:'large',name:'Large goal',categoryId:'',targetCents:1000000,balanceCents:0,contributionCents:0,aprPct:0,frequency:'monthly',priority:3},
+ ];
+ const plan=calculatePlan(p);
+ assert.equal(plan.loans[0].payments[0].date,'2027-01-01');
+ assert.ok(plan.rows.every(r=>r.netPayCents>=0));
+ assert.ok(plan.requiredShortfallCents>0);
+ const finish=plan.k401FinishDate;
+ const payday=plan.rows.find(r=>r.date===finish);
+ const month=plan.monthly.find(m=>m.month===finish.slice(0,7));
+ assert.equal(plan.goals[0].reachedDate,finish);
+ assert.equal(plan.goals[1].rows.find(r=>r.contributionCents>0).date,finish);
+ assert.equal(month.goalContributionsCents,Math.floor((payday.netPayCents-175000)*.8));
+ assert.equal(plan.rows.find(r=>r.iraCents>0).date,'2027-06-01');
+ assert.ok(plan.monthly.every(m=>m.iraCents+m.goalContributionsCents<=Math.max(0,m.netPayCents-m.loanPaymentsCents-150000)));
+});

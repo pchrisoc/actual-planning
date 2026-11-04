@@ -1,4 +1,4 @@
-import {singleTaxEstimate} from './taxes.mjs';
+import {federalTax,singleTaxEstimate} from './taxes.mjs';
 import {forecastGoal} from './goals.mjs';
 const DAY = 86400000;
 const fail = message => { throw new Error(message); };
@@ -74,6 +74,25 @@ export function calculatePlan(input) {
   let employerYtd=amount(employer.ytdCents,'Employer YTD');
   if(employerYtd>employerCap)fail('Employer YTD exceeds the selected employer cap');
   const warnings=[];
+  const taxSettings=input.tax??{mode:'flat'};
+  if(!['flat','single'].includes(taxSettings.mode))fail('Choose a valid tax calculation method');
+  const standardDeductionCents=amount(taxSettings.standardDeductionCents??1660000,'Standard deduction');
+  const priorGrossCents=amount(taxSettings.priorGrossCents??0,'Prior wages');
+  const priorInterestCents=amount(taxSettings.priorInterestCents??0,'Prior qualified student interest');
+  const otherTaxRate=pct(taxSettings.otherTaxRatePct??12.65,'State and payroll tax estimate');
+  const phaseoutStartCents=amount(taxSettings.phaseoutStartCents??8500000,'Student interest phaseout start');
+  const phaseoutEndCents=amount(taxSettings.phaseoutEndCents??10000000,'Student interest phaseout end');
+  if(phaseoutStartCents>=phaseoutEndCents)fail('Student interest phaseout end must exceed start');
+  const smart=input.smartAllocation;
+  const smartRate=smart?pct(smart.percent,'Smart allocation percentage'):0;
+  const requiredBills=smart?amount(smart.monthlyBillsCents,'Monthly required bills'):0;
+  const buffer=smart?amount(smart.monthlyBufferCents,'Monthly cash buffer'):0;
+  const extraPayroll=smart?amount(smart.payrollDeductionsCents??0,'Other payroll deductions per check'):0;
+  const taxWages=priorGrossCents+paydays.reduce((sum,p)=>sum+p.grossCents,0);
+  // The effective federal rate before deferrals bounds the modeled rate after deferrals.
+  const reserveRate=taxSettings.mode==='flat'?taxRate:
+    taxWages?federalTax(Math.max(0,taxWages-standardDeductionCents))/taxWages:0;
+  let frontLoadFinish=null;
   const accounts=[
     {id:'k401',label:'401(k)',settings:k,remaining:kLimit-kYtd},
     {id:'hsa',label:'HSA',settings:hsa,remaining:hsaLimit-hsaYtd-hsaEmployer},
@@ -83,10 +102,11 @@ export function calculatePlan(input) {
   const perPayMaximum={};
   const payrollUsed=new Map();
   let resumeAfter='';
-  const exclusive=accounts.filter(a=>a.rule.rate===1&&a.remaining>0);
+  const exclusive=accounts.filter(a=>a.rule.rate===1&&a.remaining>0&&(!smart||a.id==='k401'));
+  const frontLoading=!!smart&&exclusive.length>0;
   function scheduleAccount(account){
     const {id,label,settings,rule}=account;
-    const eligible=paydays.filter(p=>p.date>resumeAfter&&p.date>=(settings.startDate??input.firstPayDate)&&p.date<=settings.targetDate);
+    const eligible=paydays.filter(p=>(smart?p.date>=resumeAfter:p.date>resumeAfter)&&p.date>=(settings.startDate??input.firstPayDate)&&p.date<=settings.targetDate);
     const targets=split(account.remaining,eligible.length);
     let remaining=account.remaining;
     let finish=null;
@@ -95,7 +115,10 @@ export function calculatePlan(input) {
     for(const [i,p] of eligible.entries()){
       const requested=rule.mode==='target'?targets[i]:rule.mode==='percent'?Math.round(p.grossCents*rule.rate):rule.fixed;
       perPayMaximum[id]=Math.max(perPayMaximum[id],requested);
-      const available=id==='ira'?p.grossCents:Math.max(0,p.grossCents-(payrollUsed.get(p.date)??0));
+      const taxReserve=smart&&taxSettings.mode==='single'?Math.round(p.grossCents*otherTaxRate):0;
+      const mandatory=taxReserve+extraPayroll;
+      const reserve=mandatory&&reserveRate<1?Math.ceil(mandatory/(1-reserveRate)):mandatory;
+      const available=id==='ira'?p.grossCents:Math.max(0,p.grossCents-reserve-(payrollUsed.get(p.date)??0));
       // Preserve the legacy IRA target schedule, which may show a funding shortfall.
       const value=Math.min(remaining,requested,id==='ira'&&rule.mode!=='percent'?Infinity:available);
       schedule[id].set(p.date,value);
@@ -104,7 +127,7 @@ export function calculatePlan(input) {
       if(value>0&&remaining===0)finish=p.date;
     }
     if(remaining>0)warnings.push(`${label} target is not reachable with the selected contribution schedule. Review its contribution amount, paycheck percentage and dates.`);
-    if(exclusive.includes(account))resumeAfter=finish??'9999-12-31';
+    if(exclusive.includes(account)){resumeAfter=finish??'9999-12-31';if(frontLoading)frontLoadFinish=finish;}
   }
   if(!Array.isArray(input.loans)||input.loans.length>30)fail('Provide at most 30 loans');
   const ids=new Set();
@@ -181,41 +204,32 @@ export function calculatePlan(input) {
 
   for(const account of exclusive)scheduleAccount(account);
   const loanForecasts=new Map();
-  for(const loan of input.loans.filter(l=>l.paymentPct===100&&l.balanceCents>0)){
+  for(const loan of input.loans.filter(l=>!smart&&l.paymentPct===100&&l.balanceCents>0)){
     const forecast=forecastLoan(loan,resumeAfter);
     loanForecasts.set(loan.id,forecast);
     resumeAfter=forecast.payoffDate??'9999-12-31';
   }
   const goalForecasts=new Map();
-  for(const goal of goalInputs.filter(g=>g.contributionPct===100&&g.balanceCents<g.targetCents)){
+  for(const goal of goalInputs.filter(g=>!smart&&g.contributionPct===100&&g.balanceCents<g.targetCents)){
     const forecast=calculateGoal(goal,resumeAfter);
     goalForecasts.set(goal.id,forecast);
     resumeAfter=forecast.reachedDate??'9999-12-31';
   }
-  for(const account of accounts.filter(a=>!exclusive.includes(a)))scheduleAccount(account);
-  const loans=input.loans.map(l=>loanForecasts.get(l.id)??forecastLoan(l,resumeAfter));
-  const goals=goalInputs.map(g=>goalForecasts.get(g.id)??calculateGoal(g,resumeAfter));
-  if(resumeAfter)warnings.push('A 100% election gives that source priority through its final scheduled contribution or payment. Other planned payments resume afterward. Multiple 100% elections run in order: 401(k), HSA, Roth IRA, loans, then savings goals. Confirm required loan payments separately before using a delayed schedule.');
-  const taxSettings=input.tax??{mode:'flat'};
-  if(!['flat','single'].includes(taxSettings.mode))fail('Choose a valid tax calculation method');
-  const standardDeductionCents=amount(taxSettings.standardDeductionCents??1660000,'Standard deduction');
-  const priorGrossCents=amount(taxSettings.priorGrossCents??0,'Prior wages');
-  const priorInterestCents=amount(taxSettings.priorInterestCents??0,'Prior qualified student interest');
-  const otherTaxRate=pct(taxSettings.otherTaxRatePct??12.65,'State and payroll tax estimate');
-  const phaseoutStartCents=amount(taxSettings.phaseoutStartCents??8500000,'Student interest phaseout start');
-  const phaseoutEndCents=amount(taxSettings.phaseoutEndCents??10000000,'Student interest phaseout end');
-  if(phaseoutStartCents>=phaseoutEndCents)fail('Student interest phaseout end must exceed start');
+  for(const account of accounts.filter(a=>!exclusive.includes(a)&&(!smart||a.id!=='ira')))scheduleAccount(account);
+  const loans=input.loans.map(l=>loanForecasts.get(l.id)??forecastLoan(l,smart?'':resumeAfter));
+  let goals=smart?[]:goalInputs.map(g=>goalForecasts.get(g.id)??calculateGoal(g,resumeAfter));
+  if(resumeAfter&&!smart)warnings.push('A 100% election gives that source priority through its final scheduled contribution or payment. Other planned payments resume afterward. Multiple 100% elections run in order: 401(k), HSA, Roth IRA, loans, then savings goals. Confirm required loan payments separately before using a delayed schedule.');
   let kTotal=kYtd, iraTotal=iraYtd, hsaTotal=hsaYtd+hsaEmployer, employerTotal=0;
   const rows=paydays.map(p=>{
     const k401Cents=schedule.k401.get(p.date)??0;
     const hsaCents=schedule.hsa.get(p.date)??0;
-    const iraCents=schedule.ira.get(p.date)??0;
+    const iraCents=schedule.ira?.get(p.date)??0;
     const employerScheduled=Math.round(employer.mode==='salary'?p.grossCents*employerRate:Math.min(k401Cents,Math.round(p.grossCents*matchSalaryCap))*employerRate);
     const employerCents=Math.min(employerScheduled,Math.max(0,employerCap-employerYtd));
     kTotal+=k401Cents;iraTotal+=iraCents;hsaTotal+=hsaCents;employerYtd+=employerCents;employerTotal+=employerCents;
     const grossAfterDeferralCents=p.grossCents-k401Cents-hsaCents;
     const taxCents=Math.round(grossAfterDeferralCents*taxRate);
-    return {...p,k401Cents,hsaCents,hsaYtdCents:hsaTotal,iraCents,employerCents,k401YtdCents:kTotal,iraYtdCents:iraTotal,grossAfterDeferralCents,taxCents,netPayCents:grossAfterDeferralCents-taxCents};
+    return {...p,k401Cents,hsaCents,hsaYtdCents:hsaTotal,iraCents,employerCents,k401YtdCents:kTotal,iraYtdCents:iraTotal,grossAfterDeferralCents,taxCents,payrollDeductionsCents:extraPayroll,netPayCents:grossAfterDeferralCents-taxCents-extraPayroll};
   });
   if(employer.mode==='match'&&employerRate>0&&k.targetDate<`${year}-12-31`)warnings.push('Matching is calculated per contribution date and stops when employee deferrals stop. A year-end employer true-up is not modeled.');
   if(taxSettings.mode==='flat')warnings.push(`Estimated taxes use an editable ${taxRatePct}% effective-rate assumption applied to pay after payroll contributions. This is not a tax or payroll calculation; actual federal, California, Social Security and Medicare amounts depend on your circumstances. Benefits and payroll election restrictions are not modeled.`);
@@ -250,7 +264,7 @@ export function calculatePlan(input) {
       const target=annualAfterDeferral?Math.round(tax.federalBeforeInterestCents*cumulative/annualAfterDeferral):0;
       r.federalTaxCents=target-allocated;allocated=target;
       r.otherTaxCents=Math.round(r.grossCents*otherTaxRate);
-      r.taxCents=r.federalTaxCents+r.otherTaxCents;r.netPayCents=r.grossAfterDeferralCents-r.taxCents;
+      r.taxCents=r.federalTaxCents+r.otherTaxCents;r.netPayCents=r.grossAfterDeferralCents-r.taxCents-extraPayroll;
     }
     for(const m of monthly){m.taxCents=0;m.netPayCents=0;}
     for(const r of rows){const m=monthly[Number(r.date.slice(5,7))-1];m.taxCents+=r.taxCents;m.netPayCents+=r.netPayCents;}
@@ -263,10 +277,61 @@ export function calculatePlan(input) {
   if(rows.some(r=>r.netPayCents<0))warnings.push('Some elections leave less than the estimated taxes due on a paycheck. A 100% contribution is a scenario: verify employer limits, payroll deductions and cash reserves.');
   if(input.loans.some(l=>l.autopayDiscountPct))warnings.push('Autopay discounts apply only while eligible and enrolled. Enter the original APR before discounts. The temporary federal 1 percentage point total discount ends June 30, 2028; use the ongoing discount field for later periods. Monthly accrual uses the payment-date rate.');
   if(input.loans.some(l=>l.refinanceDate))warnings.push('Refinancing is an optional assumed offer, not guaranteed savings. Its APR is the final rate including discounts. Federal consolidation uses a weighted-average rate; private refinancing can remove federal borrower protections.');
+  if(smart){
+    const cashByPayday=new Map();
+    for(const month of monthly){
+      const checks=rows.filter(r=>r.date.startsWith(month.month));
+      if(!checks.length)continue;
+      month.requiredBillsCents=requiredBills;
+      const required=requiredBills+month.loanPaymentsCents;
+      month.requiredShortfallCents=Math.max(0,required-month.netPayCents);
+      let available=-required-buffer;
+      for(const check of checks){
+        const before=Math.max(0,available);
+        available+=check.netPayCents;
+        const eligible=!frontLoading||(frontLoadFinish&&check.date>=frontLoadFinish);
+        const surplus=Math.max(0,available)-before;
+        cashByPayday.set(check.date,eligible?Math.floor(Math.max(0,surplus)*smartRate):0);
+      }
+    }
+    const priorities=[
+      {id:'ira',priority:amount(smart.iraPriority??1,'Roth IRA priority')},
+      ...goalInputs.map((goal,index)=>({id:'goal',goal,priority:amount(goal.priority??index+2,'Savings goal priority')})),
+    ].sort((a,b)=>a.priority-b.priority);
+    const withdraw=(day,limit)=>{
+      const remaining=cashByPayday.get(day)??0;
+      const used=Math.min(remaining,limit);
+      cashByPayday.set(day,remaining-used);
+      return used;
+    };
+    const fundedGoals=new Map();
+    for(const item of priorities){
+      if(item.id==='ira'){
+        for(const row of rows){
+          if(row.date>=(ira.startDate??input.firstPayDate)&&row.date<=ira.targetDate){
+            row.iraCents=withdraw(row.date,iraLimit-iraTotal);
+            iraTotal+=row.iraCents;
+          }
+          row.iraYtdCents=iraTotal;
+          monthly[Number(row.date.slice(5,7))-1].iraCents+=row.iraCents;
+        }
+      }else{
+        fundedGoals.set(item.goal.id,forecastGoal(item.goal,input.firstPayDate,'',{
+          endDate:`${year}-12-31`,
+          deposits:cashByPayday,
+          withdraw,
+        }));
+      }
+    }
+    goals=goalInputs.map(g=>fundedGoals.get(g.id));
+    perPayMaximum.ira=Math.max(0,...rows.map(r=>r.iraCents));
+    if(iraTotal<iraLimit)warnings.push('Smart allocation did not fully fund the Roth IRA by its deadline.');
+    warnings.push('Smart allocation reserves the full monthly bills, scheduled loan payments and cash buffer before funding optional goals. Loan dates follow the loan schedule. Enter your required monthly payment as the loan dollar override.');
+  }
   for(const m of monthly){m.goals={};m.goalContributionsCents=0;}
   for(const g of goals)for(const r of g.rows){if(r.date.startsWith(`${year}-`)){const m=monthly[Number(r.date.slice(5,7))-1];m.goals[g.id]=(m.goals[g.id]??0)+r.contributionCents;m.goalContributionsCents+=r.contributionCents;}}
   if(monthly.some(m=>m.iraCents+m.loanPaymentsCents+m.goalContributionsCents>m.netPayCents))warnings.push('Some months require more IRA, loan and savings goal funding than estimated take-home pay after taxes and payroll contributions. Review targets before budgeting; living costs are additional.');
-  return {version:2,year,tax,loanTaxYears,hsaContributionCents:hsaTotal-hsaYtd-hsaEmployer,hsaFinishDate:rows.find(r=>r.hsaCents>0&&r.hsaYtdCents>=hsaLimit)?.date??null,otherPaymentsResumeAfter:resumeAfter==='9999-12-31'?null:resumeAfter||null,otherPaymentsBlocked:resumeAfter==='9999-12-31',startDate:input.firstPayDate,rows,monthly,loans,goals,warnings,annualPayPeriods:calendar.length,taxRatePct,totalTaxCents:rows.reduce((sum,r)=>sum+r.taxCents,0),totalNetPayCents:rows.reduce((sum,r)=>sum+r.netPayCents,0),k401RequiredPerPeriodCents:perPayMaximum.k401,iraRequiredPerPeriodCents:perPayMaximum.ira,k401FinishDate:rows.find(r=>r.k401YtdCents>=kLimit)?.date??null,iraFinishDate:rows.find(r=>r.iraYtdCents>=iraLimit)?.date??null,employee401kCents:kTotal-kYtd,iraContributionCents:iraTotal-iraYtd,employerContributionCents:employerTotal};
+  return {version:2,year,tax,loanTaxYears,smartAllocation:smart??null,requiredShortfallCents:monthly.reduce((sum,m)=>sum+(m.requiredShortfallCents??0),0),hsaContributionCents:hsaTotal-hsaYtd-hsaEmployer,hsaFinishDate:rows.find(r=>r.hsaCents>0&&r.hsaYtdCents>=hsaLimit)?.date??null,otherPaymentsResumeAfter:resumeAfter==='9999-12-31'?null:resumeAfter||null,otherPaymentsBlocked:resumeAfter==='9999-12-31',startDate:input.firstPayDate,rows,monthly,loans,goals,warnings,annualPayPeriods:calendar.length,taxRatePct,totalTaxCents:rows.reduce((sum,r)=>sum+r.taxCents,0),totalNetPayCents:rows.reduce((sum,r)=>sum+r.netPayCents,0),k401RequiredPerPeriodCents:perPayMaximum.k401,iraRequiredPerPeriodCents:perPayMaximum.ira,k401FinishDate:rows.find(r=>r.k401YtdCents>=kLimit)?.date??null,iraFinishDate:rows.find(r=>r.iraYtdCents>=iraLimit)?.date??null,employee401kCents:kTotal-kYtd,iraContributionCents:iraTotal-iraYtd,employerContributionCents:employerTotal};
 }
 export function buildAllocations(plan, mappings, months, categories, {preserveStartMonth=true}={}) {
   if(!Array.isArray(mappings)||!Array.isArray(months)||!months.length)fail('Select categories and at least one month');

@@ -17,14 +17,15 @@ export function buildOverview(plan,input,actual=null){
   const relevantActual=actual?.year===plan.year?actual:null;
   const incomeGroups=new Set((relevantActual?.groups??[]).filter(g=>g.is_income).map(g=>g.id));
   const actualMonths=months.map(m=>relevantActual?.budgets?.find(b=>b.month===m.month&&b.status==='read')?.budget??null);
-  for(const c of (unmappedSources.length?[]:relevantActual?.categories)??[]){
+  if(plan.smartAllocation)add('required-bills','Required bills',months.map(m=>amount(m.requiredBillsCents)));
+  for(const c of (plan.smartAllocation||unmappedSources.length?[]:relevantActual?.categories)??[]){
     if(c.hidden||c.is_income||incomeGroups.has(c.group_id)||mapped.has(c.id))continue;
     const values=actualMonths.map(b=>Math.max(0,amount(b?.categoryGroups?.flatMap(g=>g.categories).find(item=>item.id===c.id)?.budgeted)));
     if(values.some(v=>v>0))add(`actual:${c.id}`,c.name,values);
   }
   const rows=months.map((m,i)=>{
     const committedCents=sum(series.map(s=>s.values[i])),grossCents=m.grossCents,netPayCents=m.netPayCents??grossCents;
-    return {month:m.month,grossCents,taxCents:m.taxCents??0,k401Cents:m.k401Cents,hsaCents:m.hsaCents??0,netPayCents,committedCents,remainingCents:Math.max(0,netPayCents-committedCents),shortfallCents:Math.max(0,committedCents-netPayCents),employerCents:m.employerCents,actualAvailable:!!actualMonths[i]&&!unmappedSources.length};
+    return {month:m.month,grossCents,taxCents:m.taxCents??0,payrollDeductionsCents:plan.smartAllocation?plan.rows.filter(r=>r.date.startsWith(m.month)).reduce((sum,r)=>sum+r.payrollDeductionsCents,0):0,k401Cents:m.k401Cents,hsaCents:m.hsaCents??0,netPayCents,committedCents,remainingCents:Math.max(0,netPayCents-committedCents),shortfallCents:Math.max(0,committedCents-netPayCents),employerCents:m.employerCents,actualAvailable:!!plan.smartAllocation||!!actualMonths[i]&&!unmappedSources.length};
   });
   add('remaining','Unassigned after tax & 401(k)',rows.map(r=>r.remainingCents),'#dbe7da');
   const events=[];
@@ -36,7 +37,7 @@ export function buildOverview(plan,input,actual=null){
   if(input.hsa)retirement('hsa','Payroll HSA',{...input.hsa,ytdCents:input.hsa.ytdCents+(input.hsa.employerCents??0)},plan.hsaFinishDate);
   retirement('ira','Roth IRA',input.ira,plan.iraFinishDate);
   for(const loan of plan.loans){const settings=input.loans.find(l=>l.id===loan.id);events.push({key:`loan:${loan.id}`,name:loan.name,startDate:plan.startDate,date:loan.payoffDate,targetDate:settings?.targetDate,status:loan.payoffDate?'Paid off':`Not paid off · ${money(loan.remainingCents)} remains at target`,finished:!!loan.payoffDate});}
-  for(const goal of plan.goals??[])events.push({key:`goal:${goal.id}`,name:goal.name,startDate:plan.startDate,date:goal.reachedDate,targetDate:null,status:goal.reachedDate?(goal.balanceCents>=goal.targetCents?'Already funded':'Savings target reached'):'Not reached within 50 years',finished:!!goal.reachedDate});
+  for(const goal of plan.goals??[])events.push({key:`goal:${goal.id}`,name:goal.name,startDate:plan.startDate,date:goal.reachedDate,targetDate:null,status:goal.reachedDate?(goal.balanceCents>=goal.targetCents?'Already funded':'Savings target reached'):'Not reached within the forecast',finished:!!goal.reachedDate});
   const lastEmployer=plan.rows.filter(r=>r.employerCents>0).at(-1)?.date;
   if(lastEmployer)events.push({key:'employer',name:'Employer contributions',startDate:plan.startDate,date:lastEmployer,targetDate:null,status:'Last contribution in this plan',finished:false});
   return {year:plan.year,startDate:plan.startDate,rows,series,events,hasActual:!!relevantActual,unmappedSources,missingMonths:rows.filter((r,i)=>!actualMonths[i]).map(r=>r.month)};
@@ -52,7 +53,7 @@ export function wageSplit(overview,month='all'){
   const committedCents=sum(parts.filter(s=>s.key!=='remaining').map(s=>s.amountCents));
   const remainder=parts.find(s=>s.key==='remaining');if(remainder)remainder.amountCents=Math.max(0,netPayCents-committedCents);
   for(const part of parts)part.percent=netPayCents>0?part.amountCents/netPayCents*100:null;
-  return {grossCents,taxCents,k401Cents,hsaCents,netPayCents,committedCents,parts,netRemainderCents:netPayCents-committedCents,shortfallCents:Math.max(0,committedCents-netPayCents),monthlyShortfallCents:sum(indices.map(i=>overview.rows[i].shortfallCents)),employerCents:sum(indices.map(i=>overview.rows[i].employerCents)),incomplete:indices.some(i=>!overview.rows[i].actualAvailable)};
+  return {grossCents,taxCents,payrollDeductionsCents:sum(indices.map(i=>overview.rows[i].payrollDeductionsCents??0)),k401Cents,hsaCents,netPayCents,committedCents,parts,netRemainderCents:netPayCents-committedCents,shortfallCents:Math.max(0,committedCents-netPayCents),monthlyShortfallCents:sum(indices.map(i=>overview.rows[i].shortfallCents)),employerCents:sum(indices.map(i=>overview.rows[i].employerCents)),incomplete:indices.some(i=>!overview.rows[i].actualAvailable)};
 }
 function el(tag,text,className){const e=document.createElement(tag);if(text!==undefined)e.textContent=text;if(className)e.className=className;return e;}
 function svgNode(tag,attrs={},text){const e=document.createElementNS('http://www.w3.org/2000/svg',tag);for(const[k,v]of Object.entries(attrs))e.setAttribute(k,v);if(text!==undefined)e.textContent=text;return e;}
@@ -62,13 +63,13 @@ function legendPart(color,label){const item=el('span',undefined,'overview-legend
 export function renderOverview(plan,input,actual){
   const overview=buildOverview(plan,input,actual),root=document.getElementById('overview'),bottom=document.getElementById('wage-split');root.hidden=false;bottom.hidden=false;
   const charts=document.getElementById('overview-charts');charts.replaceChildren();
-  const coverage=el('p',undefined,'note');coverage.textContent=overview.unmappedSources.length?`Map ${overview.unmappedSources.join(', ')} to Actual categories in Populate below. Until then, existing Actual expense allocations are excluded to avoid counting the same commitment twice. This graph currently shows modeled plan items only.`:overview.missingMonths.length?`Actual allocations unavailable for ${overview.missingMonths.join(', ')}. These months show modeled plan items only; unassigned amounts are incomplete.`:'Includes existing Actual allocations outside your mapped plan categories.';charts.append(coverage);
+  const coverage=el('p',undefined,'note');coverage.textContent=plan.smartAllocation?'Required bills use the amount entered under Smart allocations. Loan payments are shown separately.':overview.unmappedSources.length?`Map ${overview.unmappedSources.join(', ')} to Actual categories in Populate below. Until then, existing Actual expense allocations are excluded to avoid counting the same commitment twice. This graph currently shows modeled plan items only.`:overview.missingMonths.length?`Actual allocations unavailable for ${overview.missingMonths.join(', ')}. These months show modeled plan items only; unassigned amounts are incomplete.`:'Includes existing Actual allocations outside your mapped plan categories.';charts.append(coverage);
   charts.append(el('p',`From ${plan.startDate}. Forecast contributions replace mapped category amounts in this view, while other positive Actual allocations are included. Budget amounts use estimated take-home pay after ${plan.tax?'single-filer federal tax plus the state/payroll estimate':`the ${plan.taxRatePct}% flat tax assumption`} and payroll contributions. ${plan.tax?'Student interest tax savings are reported separately from spendable income.':'The flat estimate is not a tax calculation.'} Benefits are not modeled.`,'muted'));
   const selected=document.getElementById('wage-scope'),previousScope=selected.value;selected.replaceChildren(new Option('All planned dates','all'),...overview.rows.map(r=>new Option(r.month,r.month)));if([...selected.options].some(option=>option.value===previousScope))selected.value=previousScope;
   const detail=el('div',undefined,'overview-detail');detail.setAttribute('aria-live','polite');
   const redrawSplit=()=>{
     const month=selected.value,split=wageSplit(overview,month),holder=document.getElementById('wage-split-content');holder.replaceChildren();
-    holder.append(el('p',`${month==='all'?`Planned ${plan.year} wages from ${plan.startDate}`:month} · ${money(split.grossCents)} gross − ${money(split.taxCents)} estimated tax − ${money(split.k401Cents)} 401(k)${split.hsaCents?` − ${money(split.hsaCents)} HSA`:""} = ${money(split.netPayCents)} post-tax pay available for budgeting. Percentages use post-tax pay as 100%.`));
+    holder.append(el('p',`${month==='all'?`Planned ${plan.year} wages from ${plan.startDate}`:month} · ${money(split.grossCents)} gross − ${money(split.taxCents)} estimated tax − ${money(split.k401Cents)} 401(k)${split.hsaCents?` − ${money(split.hsaCents)} HSA`:""}${split.payrollDeductionsCents?` − ${money(split.payrollDeductionsCents)} other payroll deductions`:""} = ${money(split.netPayCents)} post-tax pay available for budgeting. Percentages use post-tax pay as 100%.`));
     if(!split.netPayCents)holder.append(el('p','No post-tax pay is scheduled in this selection. Percentages are unavailable.','note'));
     if(split.incomplete)holder.append(el('p',overview.unmappedSources.length?'Incomplete: map the active plan sources to Actual categories to include existing expenses without double-counting. Unassigned amounts must still cover those costs.':'Incomplete: some Actual allocations could not be read. Unassigned amounts still need to cover missing costs.','note'));
     const total=sum(split.parts.map(p=>p.amountCents)),max=Math.max(split.netPayCents,total,1),bar=svgRoot(960,88,'Percentage allocation of post-tax pay');bar.classList.add('wage-percentage-bar');let x=0;
